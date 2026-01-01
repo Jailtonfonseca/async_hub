@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # Backend API (Node.js)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: async-hub-backend
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - DB_HOST=db
+      - DB_USER=async_user
+      - DB_PASS=async_pass
+      - DB_NAME=async_hub
+      - REDIS_HOST=redis
+    depends_on:
+      - db
+      - redis
+    networks:
+      - async-network
+
+  # Frontend (React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: async-hub-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:4000
+    depends_on:
+      - backend
+    networks:
+      - async-network
+    stdin_open: true
+    tty: true
+
+  # Database (MySQL)
+  db:
+    image: mysql:5.7
+    container_name: async-hub-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: async_hub
+      MYSQL_USER: async_user
+      MYSQL_PASSWORD: async_pass
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - async-network
+
+  # Queue (Redis)
+  redis:
+    image: redis:alpine
+    container_name: async-hub-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - async-network
+
+networks:
+  async-network:
+    driver: bridge
+
+volumes:
+  db_data:
