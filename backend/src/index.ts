@@ -5,6 +5,7 @@ import cors from "cors";
 import { AppDataSource } from "./data-source";
 import connectionsRouter from "./routes/connections";
 import productsRouter from "./routes/products";
+import webhooksRouter from "./routes/webhooks";
 import { tokenRefreshService } from "./services/TokenRefreshService";
 import { syncScheduler } from "./services/SyncScheduler";
 
@@ -20,6 +21,7 @@ let dbConnected = false;
 // API Routes
 app.use("/api/connections", connectionsRouter);
 app.use("/api/products", productsRouter);
+app.use("/api/webhooks", webhooksRouter);
 
 app.get("/health", (req: any, res: any) => {
     const syncStatus = syncScheduler.getStatus();

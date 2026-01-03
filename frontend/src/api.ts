@@ -142,4 +142,15 @@ export const api = {
         });
         return res.json();
     },
+
+    // Webhooks
+    async getWebhookLogs(limit: number = 20) {
+        const res = await fetch(`${API_URL}/api/webhooks/logs?limit=${limit}`);
+        return res.json();
+    },
+
+    async testWebhooks() {
+        const res = await fetch(`${API_URL}/api/webhooks/test`);
+        return res.json();
+    },
 };
