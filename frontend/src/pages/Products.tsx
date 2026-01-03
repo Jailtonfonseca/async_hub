@@ -5,17 +5,40 @@ interface Product {
     id: number;
     sku: string;
     title: string;
+    description?: string;
     price: number;
+    salePrice?: number;
     stock: number;
+    images?: string[];
+    category?: string;
+    brand?: string;
+    condition?: string;
     woocommerceId?: string;
     mercadoLibreId?: string;
     lastSyncedAt?: string;
 }
 
+const emptyProduct: Partial<Product> = {
+    sku: '',
+    title: '',
+    description: '',
+    price: 0,
+    salePrice: undefined,
+    stock: 0,
+    images: [],
+    category: '',
+    brand: '',
+    condition: 'new'
+};
+
 export default function Products() {
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [importing, setImporting] = useState<string | null>(null);
+    const [showModal, setShowModal] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [syncingAll, setSyncingAll] = useState(false);
 
     const loadProducts = async () => {
         setLoading(true);
@@ -54,26 +77,116 @@ export default function Products() {
         }
     };
 
+    const handleEdit = (product: Product) => {
+        setEditingProduct({ ...product });
+        setShowModal(true);
+    };
+
+    const handleNew = () => {
+        setEditingProduct({ ...emptyProduct });
+        setShowModal(true);
+    };
+
+    const handleDelete = async (product: Product) => {
+        if (!confirm(`Tem certeza que deseja excluir "${product.title}"?`)) return;
+        try {
+            await api.deleteProduct(product.id);
+            alert('Produto excluído!');
+            loadProducts();
+        } catch (e: any) {
+            alert('Erro ao excluir: ' + e.message);
+        }
+    };
+
+    const handleSave = async () => {
+        if (!editingProduct) return;
+        setSaving(true);
+
+        try {
+            if (editingProduct.id) {
+                // Update existing
+                await api.updateProduct(editingProduct.id, editingProduct);
+                alert('Produto atualizado!');
+            } else {
+                // Create new
+                await api.createProduct(editingProduct);
+                alert('Produto criado!');
+            }
+            setShowModal(false);
+            setEditingProduct(null);
+            loadProducts();
+        } catch (e: any) {
+            alert('Erro ao salvar: ' + e.message);
+        }
+        setSaving(false);
+    };
+
+    const handleSyncAll = async (marketplace: string) => {
+        setSyncingAll(true);
+        try {
+            const result = await api.triggerSync(marketplace);
+            if (result.success) {
+                const r = result.result;
+                alert(`Sync ${marketplace}: ${r.imported} importados, ${r.updated} atualizados, ${r.failed} falhas`);
+            } else {
+                alert('Erro: ' + result.error);
+            }
+            loadProducts();
+        } catch (e: any) {
+            alert('Erro ao sincronizar: ' + e.message);
+        }
+        setSyncingAll(false);
+    };
+
+    const updateField = (field: keyof Product, value: any) => {
+        if (!editingProduct) return;
+        setEditingProduct({ ...editingProduct, [field]: value });
+    };
+
     return (
         <div className="p-6">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold">Produtos</h1>
                 <div className="flex gap-2">
                     <button
+                        onClick={handleNew}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
+                    >
+                        + Novo Produto
+                    </button>
+                    <button
                         onClick={() => handleImport('woocommerce')}
                         disabled={!!importing}
                         className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded disabled:opacity-50"
                     >
-                        {importing === 'woocommerce' ? 'Importando...' : 'Importar WooCommerce'}
+                        {importing === 'woocommerce' ? 'Importando...' : '↓ WC'}
                     </button>
                     <button
                         onClick={() => handleImport('mercadolibre')}
                         disabled={!!importing}
                         className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded disabled:opacity-50"
                     >
-                        {importing === 'mercadolibre' ? 'Importando...' : 'Importar Mercado Livre'}
+                        {importing === 'mercadolibre' ? 'Importando...' : '↓ ML'}
                     </button>
                 </div>
+            </div>
+
+            {/* Sync All buttons */}
+            <div className="mb-4 flex gap-2">
+                <button
+                    onClick={() => handleSyncAll('woocommerce')}
+                    disabled={syncingAll}
+                    className="px-3 py-1 bg-green-800 hover:bg-green-700 rounded text-sm disabled:opacity-50"
+                >
+                    {syncingAll ? 'Sincronizando...' : '🔄 Sync All → WC'}
+                </button>
+                <button
+                    onClick={() => handleSyncAll('mercadolibre')}
+                    disabled={syncingAll}
+                    className="px-3 py-1 bg-yellow-800 hover:bg-yellow-700 rounded text-sm disabled:opacity-50"
+                >
+                    {syncingAll ? 'Sincronizando...' : '🔄 Sync All → ML'}
+                </button>
             </div>
 
             {loading ? (
@@ -81,45 +194,76 @@ export default function Products() {
             ) : products.length === 0 ? (
                 <div className="bg-gray-800 rounded-lg p-8 text-center border border-gray-700">
                     <p className="text-gray-400 mb-4">Nenhum produto cadastrado.</p>
-                    <p className="text-gray-500">Use os botões acima para importar produtos dos marketplaces.</p>
+                    <p className="text-gray-500">Use os botões acima para importar ou criar produtos.</p>
                 </div>
             ) : (
                 <div className="overflow-x-auto">
                     <table className="w-full bg-gray-800 rounded-lg overflow-hidden">
                         <thead className="bg-gray-700">
                             <tr>
+                                <th className="px-2 py-3 text-center w-16">Foto</th>
                                 <th className="px-4 py-3 text-left">SKU</th>
                                 <th className="px-4 py-3 text-left">Título</th>
                                 <th className="px-4 py-3 text-right">Preço</th>
                                 <th className="px-4 py-3 text-right">Estoque</th>
-                                <th className="px-4 py-3 text-center">WooCommerce</th>
-                                <th className="px-4 py-3 text-center">Mercado Livre</th>
+                                <th className="px-4 py-3 text-center">WC</th>
+                                <th className="px-4 py-3 text-center">ML</th>
                                 <th className="px-4 py-3 text-center">Ações</th>
                             </tr>
                         </thead>
                         <tbody>
                             {products.map(product => (
                                 <tr key={product.id} className="border-t border-gray-700 hover:bg-gray-750">
+                                    <td className="px-2 py-2 text-center">
+                                        {product.images && product.images.length > 0 ? (
+                                            <img
+                                                src={product.images[0]}
+                                                alt={product.title}
+                                                className="w-12 h-12 object-cover rounded mx-auto"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23374151" width="100" height="100"/><text x="50" y="55" text-anchor="middle" fill="%239CA3AF" font-size="30">📦</text></svg>';
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-12 h-12 bg-gray-700 rounded flex items-center justify-center mx-auto">
+                                                <span className="text-2xl">📦</span>
+                                            </div>
+                                        )}
+                                    </td>
                                     <td className="px-4 py-3 font-mono text-sm">{product.sku}</td>
                                     <td className="px-4 py-3">{product.title}</td>
-                                    <td className="px-4 py-3 text-right">R$ {Number(product.price).toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-right">
+                                        R$ {Number(product.price).toFixed(2)}
+                                        {product.salePrice && (
+                                            <span className="text-green-400 text-xs ml-1">
+                                                → R$ {Number(product.salePrice).toFixed(2)}
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="px-4 py-3 text-right">{product.stock}</td>
                                     <td className="px-4 py-3 text-center">
                                         {product.woocommerceId ? (
-                                            <span className="text-green-400">✓</span>
+                                            <span className="text-green-400" title={product.woocommerceId}>✓</span>
                                         ) : (
                                             <span className="text-gray-500">-</span>
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         {product.mercadoLibreId ? (
-                                            <span className="text-green-400">✓</span>
+                                            <span className="text-green-400" title={product.mercadoLibreId}>✓</span>
                                         ) : (
                                             <span className="text-gray-500">-</span>
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-center">
-                                        <div className="flex justify-center gap-2">
+                                        <div className="flex justify-center gap-1">
+                                            <button
+                                                onClick={() => handleEdit(product)}
+                                                className="px-2 py-1 bg-blue-700 hover:bg-blue-600 rounded text-xs"
+                                                title="Editar"
+                                            >
+                                                ✏️
+                                            </button>
                                             <button
                                                 onClick={() => handleSync(product.id, 'woocommerce')}
                                                 className="px-2 py-1 bg-green-700 hover:bg-green-600 rounded text-xs"
@@ -134,12 +278,216 @@ export default function Products() {
                                             >
                                                 ML
                                             </button>
+                                            <button
+                                                onClick={() => handleDelete(product)}
+                                                className="px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-xs"
+                                                title="Excluir"
+                                            >
+                                                🗑️
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
+                </div>
+            )}
+
+            {/* Edit Modal */}
+            {showModal && editingProduct && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                    <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-600">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-2xl font-bold">
+                                {editingProduct.id ? 'Editar Produto' : 'Novo Produto'}
+                            </h2>
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="text-gray-400 hover:text-white text-2xl"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* SKU */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">SKU</label>
+                                <input
+                                    type="text"
+                                    value={editingProduct.sku || ''}
+                                    onChange={e => updateField('sku', e.target.value)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    placeholder="SKU-001"
+                                />
+                            </div>
+
+                            {/* Title */}
+                            <div className="md:col-span-2">
+                                <label className="block text-sm text-gray-400 mb-1">Título</label>
+                                <input
+                                    type="text"
+                                    value={editingProduct.title || ''}
+                                    onChange={e => updateField('title', e.target.value)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    placeholder="Nome do Produto"
+                                />
+                            </div>
+
+                            {/* Description */}
+                            <div className="md:col-span-2">
+                                <label className="block text-sm text-gray-400 mb-1">Descrição</label>
+                                <textarea
+                                    value={editingProduct.description || ''}
+                                    onChange={e => updateField('description', e.target.value)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    rows={3}
+                                    placeholder="Descrição do produto..."
+                                />
+                            </div>
+
+                            {/* Price */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Preço (R$)</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    value={editingProduct.price || ''}
+                                    onChange={e => updateField('price', parseFloat(e.target.value) || 0)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    placeholder="0.00"
+                                />
+                            </div>
+
+                            {/* Sale Price */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Preço Promocional (R$)</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    value={editingProduct.salePrice || ''}
+                                    onChange={e => updateField('salePrice', parseFloat(e.target.value) || undefined)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    placeholder="0.00"
+                                />
+                            </div>
+
+                            {/* Stock */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Estoque</label>
+                                <input
+                                    type="number"
+                                    value={editingProduct.stock || 0}
+                                    onChange={e => updateField('stock', parseInt(e.target.value) || 0)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                />
+                            </div>
+
+                            {/* Condition */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Condição</label>
+                                <select
+                                    value={editingProduct.condition || 'new'}
+                                    onChange={e => updateField('condition', e.target.value)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                >
+                                    <option value="new">Novo</option>
+                                    <option value="used">Usado</option>
+                                    <option value="refurbished">Recondicionado</option>
+                                </select>
+                            </div>
+
+                            {/* Category */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Categoria</label>
+                                <input
+                                    type="text"
+                                    value={editingProduct.category || ''}
+                                    onChange={e => updateField('category', e.target.value)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    placeholder="Categoria"
+                                />
+                            </div>
+
+                            {/* Brand */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Marca</label>
+                                <input
+                                    type="text"
+                                    value={editingProduct.brand || ''}
+                                    onChange={e => updateField('brand', e.target.value)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    placeholder="Marca"
+                                />
+                            </div>
+
+                            {/* Marketplace IDs (read-only) */}
+                            {editingProduct.id && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm text-gray-400 mb-1">WooCommerce ID</label>
+                                        <input
+                                            type="text"
+                                            value={editingProduct.woocommerceId || '-'}
+                                            readOnly
+                                            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm text-gray-400 mb-1">Mercado Livre ID</label>
+                                        <input
+                                            type="text"
+                                            value={editingProduct.mercadoLibreId || '-'}
+                                            readOnly
+                                            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-500"
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Images */}
+                            {editingProduct.images && editingProduct.images.length > 0 && (
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm text-gray-400 mb-2">Imagens ({editingProduct.images.length})</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {editingProduct.images.map((img, index) => (
+                                            <div key={index} className="relative group">
+                                                <img
+                                                    src={img}
+                                                    alt={`Imagem ${index + 1}`}
+                                                    className="w-20 h-20 object-cover rounded border border-gray-600"
+                                                    onError={(e) => {
+                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                    }}
+                                                />
+                                                <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-center py-0.5 rounded-b">
+                                                    {index + 1}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-700">
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={saving}
+                                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50"
+                            >
+                                {saving ? 'Salvando...' : 'Salvar'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
