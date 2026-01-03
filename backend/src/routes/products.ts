@@ -45,17 +45,87 @@ router.post("/", async (req: Request, res: Response) => {
     }
 });
 
-// Update product
+// Update product (with auto-sync to marketplaces)
 router.put("/:id", async (req: Request, res: Response) => {
     try {
         const product = await productRepo().findOneBy({ id: parseInt(req.params.id) });
         if (!product) {
             return res.status(404).json({ error: "Product not found" });
         }
+
+        // Track what changed
+        const priceChanged = req.body.price !== undefined && Number(req.body.price) !== Number(product.price);
+        const salePriceChanged = req.body.salePrice !== undefined && Number(req.body.salePrice) !== Number(product.salePrice);
+        const stockChanged = req.body.stock !== undefined && Number(req.body.stock) !== Number(product.stock);
+
+        // Update local product
         Object.assign(product, req.body);
+        product.lastSyncedAt = new Date();
         await productRepo().save(product);
-        res.json(product);
-    } catch (error) {
+
+        // Auto-sync to marketplaces if price or stock changed
+        const syncResults: any = { local: true, woocommerce: null, mercadolibre: null };
+
+        if (priceChanged || salePriceChanged || stockChanged) {
+            console.log(`[ProductSync] Changes detected - price: ${priceChanged}, salePrice: ${salePriceChanged}, stock: ${stockChanged}`);
+
+            // Sync to WooCommerce
+            if (product.woocommerceId) {
+                try {
+                    const wcConnection = await connectionRepo().findOneBy({ marketplace: "woocommerce" });
+                    if (wcConnection && wcConnection.isConnected) {
+                        const wcAdapter = new WooCommerceAdapter({
+                            apiUrl: wcConnection.apiUrl || "",
+                            apiKey: wcConnection.apiKey || "",
+                            apiSecret: wcConnection.apiSecret || "",
+                        });
+
+                        if (stockChanged) {
+                            await wcAdapter.updateStock(product.woocommerceId, product.stock);
+                        }
+                        if (priceChanged || salePriceChanged) {
+                            await wcAdapter.updatePrice(product.woocommerceId, Number(product.price), product.salePrice ? Number(product.salePrice) : undefined);
+                        }
+
+                        syncResults.woocommerce = "synced";
+                        console.log(`[ProductSync] Synced to WooCommerce: ${product.sku}`);
+                    }
+                } catch (e: any) {
+                    syncResults.woocommerce = `error: ${e.message}`;
+                    console.error(`[ProductSync] WC sync error: ${e.message}`);
+                }
+            }
+
+            // Sync to Mercado Libre
+            if (product.mercadoLibreId) {
+                try {
+                    const mlConnection = await connectionRepo().findOneBy({ marketplace: "mercadolibre" });
+                    if (mlConnection && mlConnection.accessToken) {
+                        const mlAdapter = new MercadoLibreAdapter({
+                            accessToken: mlConnection.accessToken,
+                            userId: mlConnection.userId || "",
+                        });
+
+                        if (stockChanged) {
+                            await mlAdapter.updateStock(product.mercadoLibreId, product.stock);
+                        }
+                        if (priceChanged) {
+                            await mlAdapter.updatePrice(product.mercadoLibreId, Number(product.price));
+                        }
+
+                        syncResults.mercadolibre = "synced";
+                        console.log(`[ProductSync] Synced to MercadoLibre: ${product.sku}`);
+                    }
+                } catch (e: any) {
+                    syncResults.mercadolibre = `error: ${e.message}`;
+                    console.error(`[ProductSync] ML sync error: ${e.message}`);
+                }
+            }
+        }
+
+        res.json({ ...product, syncResults });
+    } catch (error: any) {
+        console.error("[ProductSync] Update error:", error);
         res.status(500).json({ error: "Failed to update product" });
     }
 });
