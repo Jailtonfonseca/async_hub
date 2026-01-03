@@ -206,4 +206,33 @@ export const api = {
         });
         return res.json();
     },
+
+    // AI Settings
+    async getAISettings() {
+        const res = await fetch(`${API_URL}/api/ai/settings`);
+        return res.json();
+    },
+
+    async saveAISettings(provider: string, data: { apiKey?: string; model?: string; isEnabled?: boolean }) {
+        const res = await fetch(`${API_URL}/api/ai/settings/${provider}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return res.json();
+    },
+
+    async testAIProvider(provider: string) {
+        const res = await fetch(`${API_URL}/api/ai/settings/${provider}/test`, {
+            method: 'POST',
+        });
+        return res.json();
+    },
+
+    async deleteAISettings(provider: string) {
+        const res = await fetch(`${API_URL}/api/ai/settings/${provider}`, {
+            method: 'DELETE',
+        });
+        return res.json();
+    },
 };

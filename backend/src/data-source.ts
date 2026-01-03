@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { Product } from "./entities/Product";
 import { Connection } from "./entities/Connection";
 import { AdSuggestion } from "./entities/AdSuggestion";
+import { AISettings } from "./entities/AISettings";
 
 dotenv.config();
 
@@ -16,7 +17,7 @@ export const AppDataSource = new DataSource({
     database: process.env.DB_NAME || "test",
     synchronize: true, // Use carefully in production
     logging: false,
-    entities: [Product, Connection, AdSuggestion],
+    entities: [Product, Connection, AdSuggestion, AISettings],
     migrations: [],
     subscribers: [],
 });

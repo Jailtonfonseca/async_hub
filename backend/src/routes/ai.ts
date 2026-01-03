@@ -204,4 +204,136 @@ router.post("/suggestions/bulk-approve", async (req: any, res: any) => {
     }
 });
 
+// ========== AI Settings Management ==========
+
+import { AISettings, AIProvider } from "../entities/AISettings";
+
+/**
+ * Get all AI settings
+ */
+router.get("/settings", async (req: any, res: any) => {
+    try {
+        const repo = AppDataSource.getRepository(AISettings);
+        const settings = await repo.find({ order: { priority: "ASC" } });
+
+        // Mask API keys for security
+        const masked = settings.map(s => ({
+            ...s,
+            apiKey: s.apiKey ? "***" + s.apiKey.slice(-4) : null,
+        }));
+
+        res.json(masked);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Save AI settings for a provider
+ */
+router.post("/settings/:provider", async (req: any, res: any) => {
+    try {
+        const provider = req.params.provider as AIProvider;
+        const { apiKey, model, isEnabled, priority } = req.body;
+
+        if (!["openai", "gemini", "openrouter"].includes(provider)) {
+            return res.status(400).json({ error: "Invalid provider" });
+        }
+
+        const repo = AppDataSource.getRepository(AISettings);
+        let settings = await repo.findOneBy({ provider });
+
+        if (!settings) {
+            settings = repo.create({ provider });
+        }
+
+        if (apiKey !== undefined && apiKey !== "") settings.apiKey = apiKey;
+        if (model !== undefined) settings.model = model;
+        if (isEnabled !== undefined) settings.isEnabled = isEnabled;
+        if (priority !== undefined) settings.priority = priority;
+
+        await repo.save(settings);
+
+        // Reload orchestrator
+        await reloadOrchestrator();
+
+        res.json({
+            success: true,
+            provider,
+            message: `${provider} settings saved`
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Delete AI settings for a provider
+ */
+router.delete("/settings/:provider", async (req: any, res: any) => {
+    try {
+        const provider = req.params.provider;
+        const repo = AppDataSource.getRepository(AISettings);
+        await repo.delete({ provider });
+
+        await reloadOrchestrator();
+
+        res.json({ success: true });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Test a specific AI provider
+ */
+router.post("/settings/:provider/test", async (req: any, res: any) => {
+    try {
+        const provider = req.params.provider as AIProvider;
+        const providerInstance = agentOrchestrator.getProvider(provider);
+
+        if (!providerInstance) {
+            return res.json({ success: false, message: `${provider} not configured` });
+        }
+
+        const working = await providerInstance.testConnection();
+        res.json({
+            success: working,
+            message: working ? `${provider} is working!` : `${provider} test failed`
+        });
+    } catch (error: any) {
+        res.json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * Helper: Reload orchestrator from database
+ */
+async function reloadOrchestrator() {
+    try {
+        const repo = AppDataSource.getRepository(AISettings);
+        const allSettings = await repo.find({
+            where: { isEnabled: true },
+            order: { priority: "ASC" }
+        });
+
+        // Clear and reload
+        for (const settings of allSettings) {
+            if (settings.apiKey) {
+                // This will add/update the provider
+                agentOrchestrator.addProvider({
+                    name: settings.provider,
+                    apiKey: settings.apiKey,
+                    model: settings.model,
+                    priority: settings.priority,
+                });
+            }
+        }
+
+        console.log("[AI] Orchestrator reloaded from database");
+    } catch (e) {
+        console.error("[AI] Failed to reload orchestrator:", e);
+    }
+}
+
 export default router;

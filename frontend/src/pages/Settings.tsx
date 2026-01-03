@@ -298,6 +298,213 @@ export default function Settings() {
                     </div>
                 </div>
             </div>
+
+            {/* AI Providers */}
+            <AISettingsSection />
+        </div>
+    );
+}
+
+// AI Settings Component
+function AISettingsSection() {
+    const [settings, setSettings] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState<string | null>(null);
+    const [testing, setTesting] = useState<string | null>(null);
+
+    const [openai, setOpenai] = useState({ apiKey: '', model: 'gpt-4-turbo-preview' });
+    const [gemini, setGemini] = useState({ apiKey: '', model: 'gemini-pro' });
+    const [openrouter, setOpenrouter] = useState({ apiKey: '', model: 'anthropic/claude-3-haiku' });
+
+    useEffect(() => {
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        try {
+            const data = await api.getAISettings();
+            setSettings(data);
+        } catch (e) {
+            console.error(e);
+        }
+        setLoading(false);
+    };
+
+    const handleSave = async (provider: string) => {
+        setSaving(provider);
+        try {
+            let data;
+            switch (provider) {
+                case 'openai': data = openai; break;
+                case 'gemini': data = gemini; break;
+                case 'openrouter': data = openrouter; break;
+                default: return;
+            }
+            const result = await api.saveAISettings(provider, data);
+            if (result.success) {
+                alert(`${provider} configurado!`);
+                loadSettings();
+            } else {
+                alert('Erro: ' + result.error);
+            }
+        } catch (e: any) {
+            alert('Erro: ' + e.message);
+        }
+        setSaving(null);
+    };
+
+    const handleTest = async (provider: string) => {
+        setTesting(provider);
+        try {
+            const result = await api.testAIProvider(provider);
+            alert(result.message);
+        } catch (e: any) {
+            alert('Erro: ' + e.message);
+        }
+        setTesting(null);
+    };
+
+    const getProviderStatus = (provider: string) => {
+        const s = settings.find(x => x.provider === provider);
+        return s?.apiKey ? '✅ Configurado' : '⚪ Não configurado';
+    };
+
+    if (loading) return <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 mt-6">Carregando...</div>;
+
+    return (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 mt-6">
+            <h2 className="text-xl font-semibold mb-4">🤖 Configurações de IA</h2>
+            <p className="text-gray-400 text-sm mb-4">
+                Configure as API keys dos provedores de IA para usar o multiplicador de anúncios.
+            </p>
+
+            <div className="space-y-4">
+                {/* OpenAI */}
+                <div className="bg-gray-700 rounded p-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-medium">OpenAI (GPT-4)</h3>
+                        <span className="text-sm">{getProviderStatus('openai')}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                        <input
+                            type="password"
+                            placeholder="sk-..."
+                            value={openai.apiKey}
+                            onChange={e => setOpenai({ ...openai, apiKey: e.target.value })}
+                            className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
+                        />
+                        <select
+                            value={openai.model}
+                            onChange={e => setOpenai({ ...openai, model: e.target.value })}
+                            className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
+                        >
+                            <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
+                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                        </select>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => handleSave('openai')}
+                            disabled={saving === 'openai'}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm disabled:opacity-50"
+                        >
+                            {saving === 'openai' ? 'Salvando...' : 'Salvar'}
+                        </button>
+                        <button
+                            onClick={() => handleTest('openai')}
+                            disabled={testing === 'openai'}
+                            className="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm disabled:opacity-50"
+                        >
+                            {testing === 'openai' ? 'Testando...' : 'Testar'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Gemini */}
+                <div className="bg-gray-700 rounded p-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-medium">Google Gemini</h3>
+                        <span className="text-sm">{getProviderStatus('gemini')}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                        <input
+                            type="password"
+                            placeholder="AI..."
+                            value={gemini.apiKey}
+                            onChange={e => setGemini({ ...gemini, apiKey: e.target.value })}
+                            className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
+                        />
+                        <select
+                            value={gemini.model}
+                            onChange={e => setGemini({ ...gemini, model: e.target.value })}
+                            className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
+                        >
+                            <option value="gemini-pro">Gemini Pro</option>
+                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        </select>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => handleSave('gemini')}
+                            disabled={saving === 'gemini'}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm disabled:opacity-50"
+                        >
+                            {saving === 'gemini' ? 'Salvando...' : 'Salvar'}
+                        </button>
+                        <button
+                            onClick={() => handleTest('gemini')}
+                            disabled={testing === 'gemini'}
+                            className="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm disabled:opacity-50"
+                        >
+                            {testing === 'gemini' ? 'Testando...' : 'Testar'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* OpenRouter */}
+                <div className="bg-gray-700 rounded p-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-medium">OpenRouter (Claude, Mixtral, etc.)</h3>
+                        <span className="text-sm">{getProviderStatus('openrouter')}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                        <input
+                            type="password"
+                            placeholder="sk-or-..."
+                            value={openrouter.apiKey}
+                            onChange={e => setOpenrouter({ ...openrouter, apiKey: e.target.value })}
+                            className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
+                        />
+                        <select
+                            value={openrouter.model}
+                            onChange={e => setOpenrouter({ ...openrouter, model: e.target.value })}
+                            className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
+                        >
+                            <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
+                            <option value="anthropic/claude-3-sonnet">Claude 3 Sonnet</option>
+                            <option value="mistralai/mixtral-8x7b-instruct">Mixtral 8x7B</option>
+                            <option value="meta-llama/llama-3-70b-instruct">Llama 3 70B</option>
+                        </select>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => handleSave('openrouter')}
+                            disabled={saving === 'openrouter'}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm disabled:opacity-50"
+                        >
+                            {saving === 'openrouter' ? 'Salvando...' : 'Salvar'}
+                        </button>
+                        <button
+                            onClick={() => handleTest('openrouter')}
+                            disabled={testing === 'openrouter'}
+                            className="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm disabled:opacity-50"
+                        >
+                            {testing === 'openrouter' ? 'Testando...' : 'Testar'}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
