@@ -4,7 +4,8 @@ function App() {
     const [status, setStatus] = useState('Checking Backend...')
 
     useEffect(() => {
-        fetch('http://localhost:4000/health')
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+        fetch(`${apiUrl}/health`)
             .then(res => res.json())
             .then(data => setStatus(data.message))
             .catch(() => setStatus('Backend not connected'))

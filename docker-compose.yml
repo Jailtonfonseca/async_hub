@@ -46,9 +46,9 @@ services:
     stdin_open: true
     tty: true
 
-  # Database (MySQL)
+  # Database (MariaDB - Better for ARM64)
   db:
-    image: mysql:5.7
+    image: mariadb:latest
     container_name: async-hub-db
     restart: always
     environment:
