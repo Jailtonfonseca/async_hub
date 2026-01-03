@@ -11,6 +11,7 @@ export default function Layout({ children }: LayoutProps) {
         { path: '/', label: 'Dashboard', icon: '📊' },
         { path: '/products', label: 'Produtos', icon: '📦' },
         { path: '/settings', label: 'Configurações', icon: '⚙️' },
+        { path: '/logs', label: 'Logs', icon: '📋' },
     ];
 
     return (
@@ -30,8 +31,8 @@ export default function Layout({ children }: LayoutProps) {
                             key={item.path}
                             to={item.path}
                             className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${location.pathname === item.path
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-400 hover:bg-gray-700 hover:text-white'
                                 }`}
                         >
                             <span>{item.icon}</span>
