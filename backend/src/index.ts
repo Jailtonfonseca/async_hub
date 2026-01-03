@@ -19,7 +19,7 @@ let dbConnected = false;
 app.use("/api/connections", connectionsRouter);
 app.use("/api/products", productsRouter);
 
-app.get("/health", (req, res) => {
+app.get("/health", (req: any, res: any) => {
     res.json({
         status: "ok",
         message: "Back-end is running!",

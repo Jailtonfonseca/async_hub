@@ -11,6 +11,16 @@ export default defineConfig({
         allowedHosts: ['.torado.store', 'localhost', '192.168.1.108'],
         watch: {
             usePolling: true
+        },
+        proxy: {
+            '/api': {
+                target: 'http://backend:4000',
+                changeOrigin: true
+            },
+            '/health': {
+                target: 'http://backend:4000',
+                changeOrigin: true
+            }
         }
     }
 })

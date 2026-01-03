@@ -138,18 +138,68 @@ export default function Settings() {
                 </div>
 
                 <div className="bg-blue-900/30 border border-blue-700 rounded p-4 mb-4">
-                    <p className="text-sm text-blue-300">
-                        Para obter as credenciais, acesse o{' '}
-                        <a
-                            href="https://developers.mercadolivre.com.br/devcenter"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline"
-                        >
-                            DevCenter do Mercado Livre
-                        </a>
-                        {' '}e crie uma aplicação.
-                    </p>
+                    <h3 className="font-semibold text-blue-300 mb-2">📘 Como Configurar no Mercado Livre</h3>
+                    <ol className="text-sm text-blue-200 space-y-2 list-decimal list-inside">
+                        <li>
+                            Acesse o{' '}
+                            <a
+                                href="https://developers.mercadolivre.com.br/devcenter"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline font-medium"
+                            >
+                                DevCenter do Mercado Livre
+                            </a>
+                        </li>
+                        <li>Clique em <strong>"Criar nova aplicação"</strong></li>
+                        <li>
+                            <strong>Solução:</strong> Selecione <em>"Gerencie seu negócio"</em> ou <em>"Gerencie negócios de outros vendedores"</em>
+                        </li>
+                        <li>
+                            <strong>URI de Redirect:</strong><br />
+                            <code className="bg-gray-800 px-2 py-1 rounded text-xs block mt-1">
+                                {window.location.origin}/callback/mercadolibre
+                            </code>
+                            <span className="text-xs text-gray-400">(Copie exatamente este URL)</span>
+                        </li>
+                        <li><strong>PKCE:</strong> Deixe desabilitado (nosso app não usa)</li>
+                        <li>
+                            <strong>Negócios:</strong> Marque <em>"Mercado Livre"</em>
+                        </li>
+                    </ol>
+
+                    <div className="mt-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded">
+                        <h4 className="font-semibold text-yellow-300 mb-2">⚠️ Permissões Necessárias</h4>
+                        <ul className="text-sm text-yellow-200 space-y-1">
+                            <li>✅ <strong>Usuários:</strong> Leitura e escrita</li>
+                            <li>✅ <strong>Publicação e sincronização:</strong> Leitura e escrita</li>
+                            <li>✅ <strong>Venda e envios:</strong> Leitura e escrita (para sincronizar estoque)</li>
+                            <li>⚪ Outros: Opcional conforme sua necessidade</li>
+                        </ul>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-purple-900/30 border border-purple-700 rounded">
+                        <h4 className="font-semibold text-purple-300 mb-2">📬 Tópicos (Webhooks)</h4>
+                        <p className="text-sm text-purple-200 mb-2">Marque estes para receber notificações automáticas:</p>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-purple-200">
+                            <span>☑️ items</span>
+                            <span>☑️ orders_v2</span>
+                            <span>☑️ questions</span>
+                            <span>☑️ shipments</span>
+                            <span>☑️ stock-locations</span>
+                            <span>☑️ items prices</span>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-green-900/30 border border-green-700 rounded">
+                        <h4 className="font-semibold text-green-300 mb-2">🔔 URL de Notificações (Opcional)</h4>
+                        <code className="bg-gray-800 px-2 py-1 rounded text-xs block">
+                            {window.location.origin.replace('3000', '4000')}/api/webhooks/mercadolibre
+                        </code>
+                        <p className="text-xs text-green-200 mt-1">
+                            Configure esta URL para receber atualizações em tempo real.
+                        </p>
+                    </div>
                 </div>
 
                 <div className="space-y-4">
