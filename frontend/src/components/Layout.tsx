@@ -8,8 +8,9 @@ export default function Layout({ children }: LayoutProps) {
     const location = useLocation();
 
     const navItems = [
-        { path: '/', label: 'Dashboard', icon: '📊' },
+        { path: '/', label: 'Dashboard', icon: '🏠' },
         { path: '/products', label: 'Produtos', icon: '📦' },
+        { path: '/analytics', label: 'Analytics', icon: '📊' },
         { path: '/settings', label: 'Configurações', icon: '⚙️' },
         { path: '/logs', label: 'Logs', icon: '📋' },
     ];

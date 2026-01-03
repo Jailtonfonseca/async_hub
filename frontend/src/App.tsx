@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
+import Analytics from './pages/Analytics';
 import MercadoLibreCallback from './pages/MercadoLibreCallback';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
                         <Routes>
                             <Route path="/" element={<Dashboard />} />
                             <Route path="/products" element={<Products />} />
+                            <Route path="/analytics" element={<Analytics />} />
                             <Route path="/settings" element={<Settings />} />
                             <Route path="/logs" element={<Logs />} />
                         </Routes>
@@ -30,3 +32,4 @@ function App() {
 }
 
 export default App;
+
