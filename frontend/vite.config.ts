@@ -8,7 +8,7 @@ export default defineConfig({
         port: 3000,
         host: true,
         strictPort: true,
-        allowedHosts: 'all',
+        allowedHosts: ['.torado.store', 'localhost', '192.168.1.108'],
         watch: {
             usePolling: true
         }
