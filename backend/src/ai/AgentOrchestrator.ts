@@ -19,6 +19,7 @@ interface ProviderConfig {
 export class AgentOrchestrator {
     private providers: Map<ProviderName, ILLMProvider> = new Map();
     private providerPriority: ProviderName[] = [];
+    private providerPriorities: Map<ProviderName, number> = new Map();
 
     constructor() {
         this.initializeFromEnv();
@@ -32,7 +33,7 @@ export class AgentOrchestrator {
             this.addProvider({
                 name: "openai",
                 apiKey: process.env.OPENAI_API_KEY,
-                model: process.env.OPENAI_MODEL || "gpt-4-turbo-preview",
+                model: process.env.OPENAI_MODEL || "gpt-4o",
                 priority: 1,
             });
         }
@@ -41,7 +42,7 @@ export class AgentOrchestrator {
             this.addProvider({
                 name: "gemini",
                 apiKey: process.env.GEMINI_API_KEY,
-                model: process.env.GEMINI_MODEL || "gemini-pro",
+                model: process.env.GEMINI_MODEL || "gemini-2.0-flash",
                 priority: 2,
             });
         }
@@ -50,7 +51,7 @@ export class AgentOrchestrator {
             this.addProvider({
                 name: "openrouter",
                 apiKey: process.env.OPENROUTER_API_KEY,
-                model: process.env.OPENROUTER_MODEL || "anthropic/claude-3-haiku",
+                model: process.env.OPENROUTER_MODEL || "anthropic/claude-3.5-sonnet",
                 priority: 3,
             });
         }
@@ -59,7 +60,7 @@ export class AgentOrchestrator {
     }
 
     /**
-     * Add a provider
+     * Add or update a provider
      */
     addProvider(config: ProviderConfig) {
         let provider: ILLMProvider;
@@ -79,10 +80,36 @@ export class AgentOrchestrator {
         }
 
         this.providers.set(config.name, provider);
-        this.providerPriority.push(config.name);
-        this.providerPriority.sort((a, b) => {
-            const priorities: Record<ProviderName, number> = { openai: 1, gemini: 2, openrouter: 3 };
-            return priorities[a] - priorities[b];
+        this.providerPriorities.set(config.name, config.priority);
+
+        // Rebuild priority list without duplicates
+        this.rebuildPriorityList();
+    }
+
+    /**
+     * Remove a provider
+     */
+    removeProvider(name: ProviderName) {
+        this.providers.delete(name);
+        this.providerPriorities.delete(name);
+        this.rebuildPriorityList();
+    }
+
+    /**
+     * Clear all providers
+     */
+    clearProviders() {
+        this.providers.clear();
+        this.providerPriorities.clear();
+        this.providerPriority = [];
+    }
+
+    /**
+     * Rebuild priority list from priorities map
+     */
+    private rebuildPriorityList() {
+        this.providerPriority = Array.from(this.providers.keys()).sort((a, b) => {
+            return (this.providerPriorities.get(a) || 99) - (this.providerPriorities.get(b) || 99);
         });
     }
 
@@ -97,9 +124,15 @@ export class AgentOrchestrator {
      * Chat with automatic fallback
      */
     async chat(messages: LLMMessage[], preferredProvider?: ProviderName): Promise<LLMResponse> {
+        if (this.providers.size === 0) {
+            throw new Error("No LLM providers configured. Please add API keys in Settings > AI Configuration.");
+        }
+
         const order = preferredProvider
             ? [preferredProvider, ...this.providerPriority.filter(p => p !== preferredProvider)]
             : this.providerPriority;
+
+        const errors: string[] = [];
 
         for (const providerName of order) {
             const provider = this.providers.get(providerName);
@@ -112,20 +145,27 @@ export class AgentOrchestrator {
                 return response;
             } catch (error: any) {
                 console.error(`[AgentOrchestrator] ${providerName} failed: ${error.message}`);
+                errors.push(`${providerName}: ${error.message}`);
                 continue;
             }
         }
 
-        throw new Error("All LLM providers failed");
+        throw new Error(`All LLM providers failed. Errors: ${errors.join("; ")}`);
     }
 
     /**
      * Generate JSON with automatic fallback
      */
     async generateJSON<T>(prompt: string, schema?: object, preferredProvider?: ProviderName): Promise<T> {
+        if (this.providers.size === 0) {
+            throw new Error("No LLM providers configured. Please add API keys in Settings > AI Configuration.");
+        }
+
         const order = preferredProvider
             ? [preferredProvider, ...this.providerPriority.filter(p => p !== preferredProvider)]
             : this.providerPriority;
+
+        const errors: string[] = [];
 
         for (const providerName of order) {
             const provider = this.providers.get(providerName);
@@ -137,11 +177,12 @@ export class AgentOrchestrator {
                 return result;
             } catch (error: any) {
                 console.error(`[AgentOrchestrator] ${providerName} JSON failed: ${error.message}`);
+                errors.push(`${providerName}: ${error.message}`);
                 continue;
             }
         }
 
-        throw new Error("All LLM providers failed for JSON generation");
+        throw new Error(`All LLM providers failed for JSON generation. Errors: ${errors.join("; ")}`);
     }
 
     /**
@@ -151,7 +192,11 @@ export class AgentOrchestrator {
         const results: Record<string, boolean> = {};
 
         for (const [name, provider] of this.providers) {
-            results[name] = await provider.testConnection();
+            try {
+                results[name] = await provider.testConnection();
+            } catch {
+                results[name] = false;
+            }
         }
 
         return results as Record<ProviderName, boolean>;
@@ -165,6 +210,7 @@ export class AgentOrchestrator {
             configuredProviders: Array.from(this.providers.keys()),
             priority: this.providerPriority,
             count: this.providers.size,
+            hasProviders: this.providers.size > 0,
         };
     }
 }

@@ -317,10 +317,12 @@ async function reloadOrchestrator() {
             order: { priority: "ASC" }
         });
 
-        // Clear and reload
+        // Clear existing providers first
+        agentOrchestrator.clearProviders();
+
+        // Reload from database
         for (const settings of allSettings) {
             if (settings.apiKey) {
-                // This will add/update the provider
                 agentOrchestrator.addProvider({
                     name: settings.provider,
                     apiKey: settings.apiKey,
@@ -330,7 +332,7 @@ async function reloadOrchestrator() {
             }
         }
 
-        console.log("[AI] Orchestrator reloaded from database");
+        console.log(`[AI] Orchestrator reloaded with ${allSettings.length} providers from database`);
     } catch (e) {
         console.error("[AI] Failed to reload orchestrator:", e);
     }
