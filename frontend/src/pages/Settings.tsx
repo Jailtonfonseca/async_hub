@@ -312,9 +312,9 @@ function AISettingsSection() {
     const [saving, setSaving] = useState<string | null>(null);
     const [testing, setTesting] = useState<string | null>(null);
 
-    const [openai, setOpenai] = useState({ apiKey: '', model: 'gpt-4-turbo-preview' });
-    const [gemini, setGemini] = useState({ apiKey: '', model: 'gemini-pro' });
-    const [openrouter, setOpenrouter] = useState({ apiKey: '', model: 'anthropic/claude-3-haiku' });
+    const [openai, setOpenai] = useState({ apiKey: '', model: 'gpt-4o' });
+    const [gemini, setGemini] = useState({ apiKey: '', model: 'gemini-2.0-flash' });
+    const [openrouter, setOpenrouter] = useState({ apiKey: '', model: 'anthropic/claude-3.5-sonnet' });
 
     useEffect(() => {
         loadSettings();
@@ -382,7 +382,7 @@ function AISettingsSection() {
                 {/* OpenAI */}
                 <div className="bg-gray-700 rounded p-4">
                     <div className="flex justify-between items-center mb-2">
-                        <h3 className="font-medium">OpenAI (GPT-4)</h3>
+                        <h3 className="font-medium">OpenAI</h3>
                         <span className="text-sm">{getProviderStatus('openai')}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3 mb-2">
@@ -393,15 +393,13 @@ function AISettingsSection() {
                             onChange={e => setOpenai({ ...openai, apiKey: e.target.value })}
                             className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
                         />
-                        <select
+                        <input
+                            type="text"
+                            placeholder="gpt-4o, o1, o3, gpt-4.5..."
                             value={openai.model}
                             onChange={e => setOpenai({ ...openai, model: e.target.value })}
                             className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
-                        >
-                            <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
-                            <option value="gpt-4">GPT-4</option>
-                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                        </select>
+                        />
                     </div>
                     <div className="flex gap-2">
                         <button
@@ -435,14 +433,13 @@ function AISettingsSection() {
                             onChange={e => setGemini({ ...gemini, apiKey: e.target.value })}
                             className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
                         />
-                        <select
+                        <input
+                            type="text"
+                            placeholder="gemini-2.0-flash, gemini-1.5-pro..."
                             value={gemini.model}
                             onChange={e => setGemini({ ...gemini, model: e.target.value })}
                             className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
-                        >
-                            <option value="gemini-pro">Gemini Pro</option>
-                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                        </select>
+                        />
                     </div>
                     <div className="flex gap-2">
                         <button
@@ -476,16 +473,13 @@ function AISettingsSection() {
                             onChange={e => setOpenrouter({ ...openrouter, apiKey: e.target.value })}
                             className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
                         />
-                        <select
+                        <input
+                            type="text"
+                            placeholder="anthropic/claude-3.5-sonnet, openai/gpt-4o..."
                             value={openrouter.model}
                             onChange={e => setOpenrouter({ ...openrouter, model: e.target.value })}
                             className="px-3 py-2 bg-gray-600 rounded border border-gray-500 text-sm"
-                        >
-                            <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
-                            <option value="anthropic/claude-3-sonnet">Claude 3 Sonnet</option>
-                            <option value="mistralai/mixtral-8x7b-instruct">Mixtral 8x7B</option>
-                            <option value="meta-llama/llama-3-70b-instruct">Llama 3 70B</option>
-                        </select>
+                        />
                     </div>
                     <div className="flex gap-2">
                         <button
