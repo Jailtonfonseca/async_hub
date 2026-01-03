@@ -75,11 +75,35 @@ router.post("/mercadolibre", async (req: any, res: any) => {
  * Receives notifications about product updates, order changes, etc.
  * 
  * WC sends the full product/order object
+ * WC also sends a ping request when creating/testing webhooks
  */
+
+// Handle WC webhook verification (GET request)
+router.get("/woocommerce", (req: any, res: any) => {
+    console.log("[Webhook WC] GET request received (verification ping)");
+    res.status(200).json({ status: "ok", message: "WooCommerce webhook endpoint ready" });
+});
+
+// Handle WC webhook HEAD request (some WC versions use this)
+router.head("/woocommerce", (req: any, res: any) => {
+    console.log("[Webhook WC] HEAD request received (verification ping)");
+    res.status(200).end();
+});
+
 router.post("/woocommerce", async (req: any, res: any) => {
     console.log("[Webhook WC] Received:", JSON.stringify(req.body).substring(0, 200));
 
+    // Check if this is a ping/test request from WooCommerce
+    const webhookId = req.headers["x-wc-webhook-id"];
     const topic = req.headers["x-wc-webhook-topic"] || "unknown";
+    const deliveryId = req.headers["x-wc-webhook-delivery-id"];
+
+    // If it's a ping request (empty body or webhook_id header but no real data)
+    if (!req.body || Object.keys(req.body).length === 0 || topic === "ping") {
+        console.log("[Webhook WC] Ping received, responding OK");
+        return res.status(200).json({ status: "ok", message: "Ping received" });
+    }
+
     const log: WebhookLog = {
         timestamp: new Date(),
         source: "woocommerce",
@@ -89,7 +113,7 @@ router.post("/woocommerce", async (req: any, res: any) => {
     };
 
     try {
-        // Acknowledge receipt
+        // Acknowledge receipt immediately
         res.status(200).json({ received: true });
 
         // Process based on topic
