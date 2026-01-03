@@ -3,6 +3,7 @@ import { DataSource } from "typeorm";
 import dotenv from "dotenv";
 import { Product } from "./entities/Product";
 import { Connection } from "./entities/Connection";
+import { AdSuggestion } from "./entities/AdSuggestion";
 
 dotenv.config();
 
@@ -15,7 +16,7 @@ export const AppDataSource = new DataSource({
     database: process.env.DB_NAME || "test",
     synchronize: true, // Use carefully in production
     logging: false,
-    entities: [Product, Connection],
+    entities: [Product, Connection, AdSuggestion],
     migrations: [],
     subscribers: [],
 });

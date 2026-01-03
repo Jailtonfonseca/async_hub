@@ -6,6 +6,7 @@ import { AppDataSource } from "./data-source";
 import connectionsRouter from "./routes/connections";
 import productsRouter from "./routes/products";
 import webhooksRouter from "./routes/webhooks";
+import aiRouter from "./routes/ai";
 import { tokenRefreshService } from "./services/TokenRefreshService";
 import { syncScheduler } from "./services/SyncScheduler";
 
@@ -22,6 +23,7 @@ let dbConnected = false;
 app.use("/api/connections", connectionsRouter);
 app.use("/api/products", productsRouter);
 app.use("/api/webhooks", webhooksRouter);
+app.use("/api/ai", aiRouter);
 
 app.get("/health", (req: any, res: any) => {
     const syncStatus = syncScheduler.getStatus();

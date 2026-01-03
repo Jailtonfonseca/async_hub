@@ -153,4 +153,57 @@ export const api = {
         const res = await fetch(`${API_URL}/api/webhooks/test`);
         return res.json();
     },
+
+    // AI
+    async getAIStatus() {
+        const res = await fetch(`${API_URL}/api/ai/status`);
+        return res.json();
+    },
+
+    async generateSuggestions(productId: number) {
+        const res = await fetch(`${API_URL}/api/ai/generate/${productId}`, {
+            method: 'POST',
+        });
+        return res.json();
+    },
+
+    async getPendingSuggestions() {
+        const res = await fetch(`${API_URL}/api/ai/suggestions`);
+        return res.json();
+    },
+
+    async getSuggestionsByProduct(productId: number) {
+        const res = await fetch(`${API_URL}/api/ai/suggestions/product/${productId}`);
+        return res.json();
+    },
+
+    async approveSuggestion(id: number) {
+        const res = await fetch(`${API_URL}/api/ai/suggestions/${id}/approve`, {
+            method: 'POST',
+        });
+        return res.json();
+    },
+
+    async rejectSuggestion(id: number) {
+        const res = await fetch(`${API_URL}/api/ai/suggestions/${id}/reject`, {
+            method: 'POST',
+        });
+        return res.json();
+    },
+
+    async updateSuggestion(id: number, data: any) {
+        const res = await fetch(`${API_URL}/api/ai/suggestions/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return res.json();
+    },
+
+    async createSuggestionInML(id: number) {
+        const res = await fetch(`${API_URL}/api/ai/suggestions/${id}/create-in-ml`, {
+            method: 'POST',
+        });
+        return res.json();
+    },
 };
