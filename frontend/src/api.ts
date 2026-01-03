@@ -103,4 +103,15 @@ export const api = {
         const res = await fetch(`${API_URL}/api/products/${id}/sync/${marketplace}`, { method: 'POST' });
         return res.json();
     },
+
+    // Token Management
+    async getTokenStatus(marketplace: string) {
+        const res = await fetch(`${API_URL}/api/tokens/status/${marketplace}`);
+        return res.json();
+    },
+
+    async refreshToken(marketplace: string) {
+        const res = await fetch(`${API_URL}/api/tokens/refresh/${marketplace}`, { method: 'POST' });
+        return res.json();
+    },
 };

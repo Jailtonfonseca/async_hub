@@ -87,7 +87,24 @@ export default function Logs() {
             addLog('error', 'WooCommerce', `Test failed: ${e.message}`);
         }
 
-        // Test 6: Try importing from MercadoLibre
+        // Test 6: Check Token Status
+        addLog('info', 'Token ML', 'Checking MercadoLibre token status...');
+        try {
+            const tokenStatus = await api.getTokenStatus('mercadolibre');
+            if (tokenStatus.hasToken) {
+                if (tokenStatus.isValid) {
+                    addLog('success', 'Token ML', `Token válido - expira em ${tokenStatus.hoursUntilExpiry}h`, tokenStatus);
+                } else {
+                    addLog('warning', 'Token ML', 'Token expirado ou inválido', tokenStatus);
+                }
+            } else {
+                addLog('warning', 'Token ML', 'Nenhum token encontrado - autorize o app', tokenStatus);
+            }
+        } catch (e: any) {
+            addLog('error', 'Token ML', `Erro ao verificar token: ${e.message}`);
+        }
+
+        // Test 7: Try importing from MercadoLibre
         addLog('info', 'Import', 'Attempting to import products from MercadoLibre...');
         try {
             const result = await api.importProducts('mercadolibre');

@@ -5,6 +5,7 @@ import cors from "cors";
 import { AppDataSource } from "./data-source";
 import connectionsRouter from "./routes/connections";
 import productsRouter from "./routes/products";
+import { tokenRefreshService } from "./services/TokenRefreshService";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -23,8 +24,22 @@ app.get("/health", (req: any, res: any) => {
     res.json({
         status: "ok",
         message: "Back-end is running!",
-        database: dbConnected ? "connected" : "connecting..."
+        database: dbConnected ? "connected" : "connecting...",
+        tokenRefresh: "active"
     });
+});
+
+// Token refresh endpoint
+app.post("/api/tokens/refresh/:marketplace", async (req: any, res: any) => {
+    const { marketplace } = req.params;
+    const result = await tokenRefreshService.forceRefresh(marketplace);
+    res.json(result);
+});
+
+app.get("/api/tokens/status/:marketplace", async (req: any, res: any) => {
+    const { marketplace } = req.params;
+    const status = await tokenRefreshService.getTokenStatus(marketplace);
+    res.json(status);
 });
 
 // Start server IMMEDIATELY
@@ -41,6 +56,9 @@ const initializeDatabase = async (attempts = 1): Promise<void> => {
         await AppDataSource.initialize();
         dbConnected = true;
         console.log("Data Source has been initialized!");
+
+        // Start token refresh service after DB is ready
+        tokenRefreshService.start();
     } catch (err) {
         console.error(`Error during Data Source initialization (Attempt ${attempts}/${MAX_RETRIES}):`, err);
         if (attempts < MAX_RETRIES) {
@@ -53,4 +71,5 @@ const initializeDatabase = async (attempts = 1): Promise<void> => {
 };
 
 initializeDatabase();
+
 
