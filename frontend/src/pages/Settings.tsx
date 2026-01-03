@@ -75,6 +75,52 @@ export default function Settings() {
                     )}
                 </div>
 
+                <div className="bg-green-900/30 border border-green-700 rounded p-4 mb-4">
+                    <h3 className="font-semibold text-green-300 mb-2">📘 Como Obter as Credenciais WooCommerce</h3>
+                    <ol className="text-sm text-green-200 space-y-2 list-decimal list-inside">
+                        <li>
+                            Acesse o painel admin do WordPress: <code className="bg-gray-800 px-1 rounded">seusite.com/wp-admin</code>
+                        </li>
+                        <li>
+                            Vá para <strong>WooCommerce → Configurações → Avançado → REST API</strong>
+                        </li>
+                        <li>
+                            Clique em <strong>"Adicionar chave"</strong>
+                        </li>
+                        <li>
+                            Preencha:
+                            <ul className="ml-4 mt-1 space-y-1">
+                                <li>• <strong>Descrição:</strong> ASync Hub</li>
+                                <li>• <strong>Usuário:</strong> Seu usuário admin</li>
+                                <li>• <strong>Permissões:</strong> <span className="text-yellow-300">Leitura/Escrita</span></li>
+                            </ul>
+                        </li>
+                        <li>
+                            Clique em <strong>"Gerar chave de API"</strong>
+                        </li>
+                        <li>
+                            Copie a <strong>Consumer Key</strong> (ck_...) e <strong>Consumer Secret</strong> (cs_...)
+                        </li>
+                    </ol>
+
+                    <div className="mt-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded">
+                        <h4 className="font-semibold text-yellow-300 mb-2">⚠️ Importante</h4>
+                        <ul className="text-sm text-yellow-200 space-y-1">
+                            <li>• A Consumer Secret só é mostrada <strong>uma vez</strong>. Salve em um lugar seguro!</li>
+                            <li>• Seu site <strong>deve ter HTTPS</strong> para a API funcionar corretamente</li>
+                            <li>• Use a URL completa com https:// (ex: https://minhaloja.com.br)</li>
+                        </ul>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-blue-900/30 border border-blue-700 rounded">
+                        <h4 className="font-semibold text-blue-300 mb-2">🔌 Testando a Conexão</h4>
+                        <p className="text-sm text-blue-200">
+                            Após preencher os campos, clique em "Salvar e Testar". O sistema vai tentar
+                            acessar a API do WooCommerce e verificar se as credenciais estão corretas.
+                        </p>
+                    </div>
+                </div>
+
                 <div className="space-y-4">
                     <div>
                         <label className="block text-sm text-gray-400 mb-1">URL da Loja</label>
