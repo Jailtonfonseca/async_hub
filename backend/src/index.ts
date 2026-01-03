@@ -3,12 +3,18 @@ import express from "express";
 import cors from "cors";
 
 import { AppDataSource } from "./data-source";
+import connectionsRouter from "./routes/connections";
+import productsRouter from "./routes/products";
 
 const app = express();
 const port = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
+
+// API Routes
+app.use("/api/connections", connectionsRouter);
+app.use("/api/products", productsRouter);
 
 app.get("/health", (req, res) => {
     res.json({ status: "ok", message: "Back-end is running!" });
