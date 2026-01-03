@@ -6,6 +6,7 @@ import { AppDataSource } from "./data-source";
 import connectionsRouter from "./routes/connections";
 import productsRouter from "./routes/products";
 import { tokenRefreshService } from "./services/TokenRefreshService";
+import { syncScheduler } from "./services/SyncScheduler";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -21,15 +22,22 @@ app.use("/api/connections", connectionsRouter);
 app.use("/api/products", productsRouter);
 
 app.get("/health", (req: any, res: any) => {
+    const syncStatus = syncScheduler.getStatus();
     res.json({
         status: "ok",
         message: "Back-end is running!",
         database: dbConnected ? "connected" : "connecting...",
-        tokenRefresh: "active"
+        tokenRefresh: "active",
+        syncScheduler: {
+            isRunning: syncStatus.isRunning,
+            lastSync: syncStatus.lastSync,
+            nextSync: syncStatus.nextSync,
+            intervalMinutes: syncStatus.intervalMinutes
+        }
     });
 });
 
-// Token refresh endpoint
+// Token refresh endpoints
 app.post("/api/tokens/refresh/:marketplace", async (req: any, res: any) => {
     const { marketplace } = req.params;
     const result = await tokenRefreshService.forceRefresh(marketplace);
@@ -40,6 +48,41 @@ app.get("/api/tokens/status/:marketplace", async (req: any, res: any) => {
     const { marketplace } = req.params;
     const status = await tokenRefreshService.getTokenStatus(marketplace);
     res.json(status);
+});
+
+// Sync scheduler endpoints
+app.get("/api/sync/status", (req: any, res: any) => {
+    res.json(syncScheduler.getStatus());
+});
+
+app.get("/api/sync/history", (req: any, res: any) => {
+    const limit = parseInt(req.query.limit) || 10;
+    res.json(syncScheduler.getHistory(limit));
+});
+
+app.post("/api/sync/trigger", async (req: any, res: any) => {
+    const results = await syncScheduler.runFullSync();
+    res.json({ success: true, results });
+});
+
+app.post("/api/sync/trigger/:marketplace", async (req: any, res: any) => {
+    const { marketplace } = req.params;
+    const result = await syncScheduler.triggerSync(marketplace);
+    if (result) {
+        res.json({ success: true, result });
+    } else {
+        res.status(404).json({ success: false, error: "Marketplace not connected" });
+    }
+});
+
+app.post("/api/sync/interval", (req: any, res: any) => {
+    const { minutes } = req.body;
+    if (minutes && minutes >= 1) {
+        syncScheduler.setInterval(minutes);
+        res.json({ success: true, intervalMinutes: minutes });
+    } else {
+        res.status(400).json({ success: false, error: "Invalid interval (min: 1 minute)" });
+    }
 });
 
 // Start server IMMEDIATELY
@@ -57,8 +100,9 @@ const initializeDatabase = async (attempts = 1): Promise<void> => {
         dbConnected = true;
         console.log("Data Source has been initialized!");
 
-        // Start token refresh service after DB is ready
+        // Start services after DB is ready
         tokenRefreshService.start();
+        syncScheduler.start(15); // Sync every 15 minutes
     } catch (err) {
         console.error(`Error during Data Source initialization (Attempt ${attempts}/${MAX_RETRIES}):`, err);
         if (attempts < MAX_RETRIES) {
@@ -71,5 +115,6 @@ const initializeDatabase = async (attempts = 1): Promise<void> => {
 };
 
 initializeDatabase();
+
 
 

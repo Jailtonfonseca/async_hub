@@ -114,4 +114,32 @@ export const api = {
         const res = await fetch(`${API_URL}/api/tokens/refresh/${marketplace}`, { method: 'POST' });
         return res.json();
     },
+
+    // Sync Scheduler
+    async getSyncStatus() {
+        const res = await fetch(`${API_URL}/api/sync/status`);
+        return res.json();
+    },
+
+    async getSyncHistory(limit: number = 10) {
+        const res = await fetch(`${API_URL}/api/sync/history?limit=${limit}`);
+        return res.json();
+    },
+
+    async triggerSync(marketplace?: string) {
+        const url = marketplace
+            ? `${API_URL}/api/sync/trigger/${marketplace}`
+            : `${API_URL}/api/sync/trigger`;
+        const res = await fetch(url, { method: 'POST' });
+        return res.json();
+    },
+
+    async setSyncInterval(minutes: number) {
+        const res = await fetch(`${API_URL}/api/sync/interval`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ minutes }),
+        });
+        return res.json();
+    },
 };
