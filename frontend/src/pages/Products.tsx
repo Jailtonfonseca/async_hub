@@ -9,6 +9,8 @@ interface Product {
     price: number;
     salePrice?: number;
     costPrice?: number;
+    groupId?: string;
+    listingType?: string;
     stock: number;
     images?: string[];
     category?: string;
@@ -26,6 +28,7 @@ const emptyProduct: Partial<Product> = {
     price: 0,
     salePrice: undefined,
     costPrice: undefined,
+    groupId: '',
     stock: 0,
     images: [],
     category: '',
@@ -340,6 +343,21 @@ export default function Products() {
                                     onChange={e => updateField('sku', e.target.value)}
                                     className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
                                     placeholder="SKU-001"
+                                />
+                            </div>
+
+                            {/* Group ID */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">
+                                    ID do Grupo
+                                    <span className="text-xs text-blue-400 ml-2">(agrupa anúncios com mesmo estoque)</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editingProduct.groupId || ''}
+                                    onChange={e => updateField('groupId', e.target.value)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    placeholder="Ex: WIDGET-001"
                                 />
                             </div>
 

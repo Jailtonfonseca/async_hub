@@ -318,4 +318,138 @@ router.post("/:id/sync/:marketplace", async (req: Request, res: Response) => {
     }
 });
 
+// ========== Product Grouping ==========
+
+// Get products grouped by groupId
+router.get("/grouped/list", async (req: Request, res: Response) => {
+    try {
+        const products = await productRepo().find({
+            order: { groupId: "ASC", updatedAt: "DESC" },
+        });
+
+        // Group products by groupId
+        const groups: Record<string, any> = {};
+        const ungrouped: any[] = [];
+
+        for (const product of products) {
+            if (product.groupId) {
+                if (!groups[product.groupId]) {
+                    groups[product.groupId] = {
+                        groupId: product.groupId,
+                        products: [],
+                        totalStock: 0,
+                        totalValue: 0,
+                        costPrice: null,
+                    };
+                }
+                groups[product.groupId].products.push(product);
+                // Use the first product's costPrice for the group
+                if (!groups[product.groupId].costPrice && product.costPrice) {
+                    groups[product.groupId].costPrice = product.costPrice;
+                }
+            } else {
+                ungrouped.push(product);
+            }
+        }
+
+        // Calculate totals for each group
+        for (const groupId in groups) {
+            const group = groups[groupId];
+            // Stock is shared - use the max stock among all ads
+            group.totalStock = Math.max(...group.products.map((p: Product) => p.stock));
+            if (group.costPrice) {
+                group.totalValue = group.totalStock * Number(group.costPrice);
+            }
+        }
+
+        res.json({
+            groups: Object.values(groups),
+            ungrouped,
+            totalGroups: Object.keys(groups).length,
+            totalUngrouped: ungrouped.length,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Set group for a product
+router.post("/:id/group", async (req: Request, res: Response) => {
+    try {
+        const { groupId } = req.body;
+        const product = await productRepo().findOneBy({ id: parseInt(req.params.id) });
+
+        if (!product) {
+            return res.status(404).json({ error: "Product not found" });
+        }
+
+        product.groupId = groupId || null;
+        await productRepo().save(product);
+
+        // If setting a group, sync stock with other products in the same group
+        if (groupId) {
+            const groupProducts = await productRepo().find({
+                where: { groupId },
+            });
+
+            // Use the highest stock value as the shared stock
+            const maxStock = Math.max(...groupProducts.map(p => p.stock));
+
+            // Update all products in the group with the same stock
+            for (const p of groupProducts) {
+                if (p.stock !== maxStock) {
+                    p.stock = maxStock;
+                    await productRepo().save(p);
+                }
+            }
+
+            res.json({
+                success: true,
+                product,
+                groupStock: maxStock,
+                productsInGroup: groupProducts.length,
+            });
+        } else {
+            res.json({ success: true, product });
+        }
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update stock for entire group
+router.post("/group/:groupId/stock", async (req: Request, res: Response) => {
+    try {
+        const { groupId } = req.params;
+        const { stock } = req.body;
+
+        if (stock === undefined) {
+            return res.status(400).json({ error: "Stock value required" });
+        }
+
+        const products = await productRepo().find({
+            where: { groupId },
+        });
+
+        if (products.length === 0) {
+            return res.status(404).json({ error: "Group not found" });
+        }
+
+        // Update all products in the group
+        for (const product of products) {
+            product.stock = stock;
+            await productRepo().save(product);
+        }
+
+        res.json({
+            success: true,
+            groupId,
+            stock,
+            productsUpdated: products.length,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 export default router;

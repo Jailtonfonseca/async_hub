@@ -23,6 +23,12 @@ export class Product {
     @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
     costPrice?: number;
 
+    @Column({ nullable: true })
+    groupId?: string; // User-defined group ID to link multiple ads to same physical product
+
+    @Column({ nullable: true })
+    listingType?: string; // 'classic', 'premium', 'gold_special', etc.
+
     @Column({ default: 0 })
     stock!: number;
 
