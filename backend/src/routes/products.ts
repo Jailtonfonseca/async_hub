@@ -169,42 +169,75 @@ router.post("/import/:marketplace", async (req: Request, res: Response) => {
         const externalProducts = await adapter.getProducts();
         let imported = 0;
         let updated = 0;
+        let skipped = 0;
 
         for (const extProd of externalProducts) {
-            let product = await productRepo().findOneBy({ sku: extProd.sku });
+            let product = null;
+
+            // First, try to find by external ID (prevents duplicates)
+            if (marketplace === "mercadolibre" && extProd.externalId) {
+                product = await productRepo().findOneBy({ mercadoLibreId: extProd.externalId });
+            } else if (marketplace === "woocommerce" && extProd.externalId) {
+                product = await productRepo().findOneBy({ woocommerceId: extProd.externalId });
+            }
+
+            // If not found by external ID, try by SKU
+            if (!product && extProd.sku) {
+                product = await productRepo().findOneBy({ sku: extProd.sku });
+            }
 
             if (product) {
-                // Update existing
-                product.title = extProd.title;
-                product.description = extProd.description;
-                product.price = extProd.price;
-                product.salePrice = extProd.salePrice;
-                product.stock = extProd.stock;
-                product.images = extProd.images;
-                product.lastSyncedAt = new Date();
+                // Update existing - only if it's from the same marketplace
+                const isSameSource =
+                    (marketplace === "mercadolibre" && product.mercadoLibreId === extProd.externalId) ||
+                    (marketplace === "woocommerce" && product.woocommerceId === extProd.externalId) ||
+                    (!product.mercadoLibreId && !product.woocommerceId);
 
-                if (marketplace === "woocommerce") {
-                    product.woocommerceId = extProd.externalId;
+                if (isSameSource || !product.mercadoLibreId) {
+                    product.title = extProd.title;
+                    product.description = extProd.description;
+                    product.price = extProd.price;
+                    product.salePrice = extProd.salePrice;
+                    product.stock = extProd.stock;
+                    product.images = extProd.images;
+                    product.lastSyncedAt = new Date();
+
+                    if (marketplace === "woocommerce") {
+                        product.woocommerceId = extProd.externalId;
+                    } else {
+                        product.mercadoLibreId = extProd.externalId;
+                    }
+
+                    await productRepo().save(product);
+                    updated++;
                 } else {
-                    product.mercadoLibreId = extProd.externalId;
+                    // Product exists but from different source - skip to avoid duplicating
+                    console.log(`[Import] Skipping ${extProd.title} - already exists from different source`);
+                    skipped++;
                 }
-
-                updated++;
             } else {
                 // Create new
                 product = productRepo().create({
-                    ...extProd,
+                    sku: extProd.sku,
+                    title: extProd.title,
+                    description: extProd.description,
+                    price: extProd.price,
+                    salePrice: extProd.salePrice,
+                    stock: extProd.stock,
+                    images: extProd.images,
+                    category: extProd.category,
+                    brand: extProd.brand,
+                    condition: extProd.condition || "new",
                     woocommerceId: marketplace === "woocommerce" ? extProd.externalId : undefined,
                     mercadoLibreId: marketplace === "mercadolibre" ? extProd.externalId : undefined,
                     lastSyncedAt: new Date(),
                 });
+                await productRepo().save(product);
                 imported++;
             }
-
-            await productRepo().save(product);
         }
 
-        res.json({ success: true, imported, updated, total: externalProducts.length });
+        res.json({ success: true, imported, updated, skipped, total: externalProducts.length });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Import failed" });
     }

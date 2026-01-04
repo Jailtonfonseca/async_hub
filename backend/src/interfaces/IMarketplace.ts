@@ -23,6 +23,7 @@ export interface IProduct {
     attributes?: Record<string, string>;
     status?: 'active' | 'paused' | 'deleted';
     sourceMarketplace?: string;
+    listingType?: 'classic' | 'premium' | 'other';
     lastSyncedAt?: Date;
 }
 

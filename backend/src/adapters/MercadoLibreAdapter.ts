@@ -118,10 +118,22 @@ export class MercadoLibreAdapter implements IMarketplace {
     }
 
     private mapToProduct(mlItem: any): IProduct {
+        // Get listing type to identify Classic vs Premium
+        const listingType = mlItem.listing_type_id || "";
+        const isClassic = listingType.includes("free") || listingType === "bronze" || listingType === "silver";
+        const isPremium = listingType.includes("gold") || listingType === "platinum";
+
+        // Extract base SKU - prefer seller_custom_field, otherwise use ML ID
+        // If seller didn't set SKU, we'll use ML ID which means each ad is a separate product
+        let baseSku = mlItem.seller_custom_field || mlItem.id;
+
+        // Clean title for better display
+        const title = mlItem.title || "";
+
         return {
             externalId: mlItem.id,
-            sku: mlItem.seller_custom_field || mlItem.id,
-            title: mlItem.title || "",
+            sku: baseSku,
+            title: title,
             description: "", // Description requires separate API call
             price: mlItem.price || 0,
             stock: mlItem.available_quantity || 0,
@@ -131,6 +143,7 @@ export class MercadoLibreAdapter implements IMarketplace {
             condition: mlItem.condition === "new" ? "new" : "used",
             status: mlItem.status === "active" ? "active" : "paused",
             sourceMarketplace: "mercadolibre",
+            listingType: isClassic ? "classic" : isPremium ? "premium" : "other",
         };
     }
 
