@@ -8,6 +8,7 @@ interface Product {
     description?: string;
     price: number;
     salePrice?: number;
+    costPrice?: number;
     stock: number;
     images?: string[];
     category?: string;
@@ -24,6 +25,7 @@ const emptyProduct: Partial<Product> = {
     description: '',
     price: 0,
     salePrice: undefined,
+    costPrice: undefined,
     stock: 0,
     images: [],
     category: '',
@@ -205,7 +207,9 @@ export default function Products() {
                                 <th className="px-4 py-3 text-left">SKU</th>
                                 <th className="px-4 py-3 text-left">Título</th>
                                 <th className="px-4 py-3 text-right">Preço</th>
+                                <th className="px-4 py-3 text-right">Custo</th>
                                 <th className="px-4 py-3 text-right">Estoque</th>
+                                <th className="px-4 py-3 text-right">Valor Estoque</th>
                                 <th className="px-4 py-3 text-center">WC</th>
                                 <th className="px-4 py-3 text-center">ML</th>
                                 <th className="px-4 py-3 text-center">Ações</th>
@@ -240,7 +244,23 @@ export default function Products() {
                                             </span>
                                         )}
                                     </td>
+                                    <td className="px-4 py-3 text-right">
+                                        {product.costPrice ? (
+                                            <span className="text-yellow-400">R$ {Number(product.costPrice).toFixed(2)}</span>
+                                        ) : (
+                                            <span className="text-gray-500">-</span>
+                                        )}
+                                    </td>
                                     <td className="px-4 py-3 text-right">{product.stock}</td>
+                                    <td className="px-4 py-3 text-right">
+                                        {product.costPrice ? (
+                                            <span className="text-blue-400 font-medium">
+                                                R$ {(Number(product.costPrice) * product.stock).toFixed(2)}
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-500">-</span>
+                                        )}
+                                    </td>
                                     <td className="px-4 py-3 text-center">
                                         {product.woocommerceId ? (
                                             <span className="text-green-400" title={product.woocommerceId}>✓</span>
@@ -383,6 +403,34 @@ export default function Products() {
                                     className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
                                 />
                             </div>
+
+                            {/* Cost Price */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Custo Unitário (R$)</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    value={editingProduct.costPrice || ''}
+                                    onChange={e => updateField('costPrice', parseFloat(e.target.value) || undefined)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                    placeholder="0.00"
+                                />
+                            </div>
+
+                            {/* Stock Value Display */}
+                            {editingProduct.costPrice && editingProduct.stock ? (
+                                <div className="md:col-span-2 bg-blue-900/30 border border-blue-700 rounded p-3">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-300">💰 Valor Total em Estoque:</span>
+                                        <span className="text-2xl font-bold text-blue-400">
+                                            R$ {(Number(editingProduct.costPrice) * (editingProduct.stock || 0)).toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm text-gray-400 mt-1">
+                                        {editingProduct.stock} unidades × R$ {Number(editingProduct.costPrice).toFixed(2)}
+                                    </div>
+                                </div>
+                            ) : null}
 
                             {/* Condition */}
                             <div>

@@ -20,6 +20,9 @@ export class Product {
     @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
     salePrice?: number;
 
+    @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+    costPrice?: number;
+
     @Column({ default: 0 })
     stock!: number;
 
