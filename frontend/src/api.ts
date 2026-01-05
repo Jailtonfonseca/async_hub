@@ -104,6 +104,30 @@ export const api = {
         return res.json();
     },
 
+    // Product Groups
+    async getProductGroups() {
+        const res = await fetch(`${API_URL}/api/products/groups`);
+        return res.json();
+    },
+
+    async setProductGroup(id: number, groupId: string | null) {
+        const res = await fetch(`${API_URL}/api/products/${id}/group`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupId }),
+        });
+        return res.json();
+    },
+
+    async updateGroupStock(groupId: string, stock: number) {
+        const res = await fetch(`${API_URL}/api/products/groups/${groupId}/stock`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stock }),
+        });
+        return res.json();
+    },
+
     // Token Management
     async getTokenStatus(marketplace: string) {
         const res = await fetch(`${API_URL}/api/tokens/status/${marketplace}`);
