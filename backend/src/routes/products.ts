@@ -218,23 +218,36 @@ router.put("/:id", async (req: Request, res: Response) => {
                 }
             }
 
-            // Sync stock to other products in the same group
-            if (stockChanged && product.groupId) {
+            // Sync stock and costPrice to other products in the same group
+            const costPriceChanged = req.body.costPrice !== undefined && Number(req.body.costPrice) !== Number(product.costPrice);
+
+            if ((stockChanged || costPriceChanged) && product.groupId) {
                 const groupProducts = await productRepo().find({
                     where: { groupId: product.groupId },
                 });
 
                 let groupSynced = 0;
                 for (const gp of groupProducts) {
-                    if (gp.id !== product.id && gp.stock !== product.stock) {
-                        gp.stock = product.stock;
-                        await productRepo().save(gp);
-                        groupSynced++;
+                    let changed = false;
+                    if (gp.id !== product.id) {
+                        if (stockChanged && gp.stock !== product.stock) {
+                            gp.stock = product.stock;
+                            changed = true;
+                        }
+                        if (costPriceChanged && Number(gp.costPrice) !== Number(product.costPrice)) {
+                            gp.costPrice = product.costPrice;
+                            changed = true;
+                        }
+
+                        if (changed) {
+                            await productRepo().save(gp);
+                            groupSynced++;
+                        }
                     }
                 }
 
                 if (groupSynced > 0) {
-                    console.log(`[ProductSync] Updated stock for ${groupSynced} products in group ${product.groupId}`);
+                    console.log(`[ProductSync] Updated stock/cost for ${groupSynced} products in group ${product.groupId}`);
                     (syncResults as any).groupSync = `${groupSynced} products updated`;
                 }
             }

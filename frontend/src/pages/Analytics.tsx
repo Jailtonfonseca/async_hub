@@ -88,23 +88,44 @@ export default function Analytics() {
             const webhookLogs = await api.getWebhookLogs(100);
 
             // Calculate analytics
-            const withWC = productsData.filter((p: Product) => p.woocommerceId).length;
-            const withML = productsData.filter((p: Product) => p.mercadoLibreId).length;
-            const withBoth = productsData.filter((p: Product) => p.woocommerceId && p.mercadoLibreId).length;
-            const lowStock = productsData.filter((p: Product) => p.stock > 0 && p.stock <= 5).length;
-            const outOfStock = productsData.filter((p: Product) => p.stock === 0).length;
+            // Deduplicate products based on groupId
+            // If a product has a groupId, it counts as 1 physical product (the group).
+            // We take the representative with the most complete data or just the first one.
+            const uniqueProductsMap = new Map<string, Product>();
+            const ungroupedProducts: Product[] = [];
 
-            // Group analytics
+            productsData.forEach((p: Product) => {
+                if (p.groupId) {
+                    if (!uniqueProductsMap.has(p.groupId)) {
+                        uniqueProductsMap.set(p.groupId, p);
+                    }
+                } else {
+                    ungroupedProducts.push(p);
+                }
+            });
+
+            const uniqueGroupedProducts = Array.from(uniqueProductsMap.values());
+            const uniquePhysicalProducts = [...uniqueGroupedProducts, ...ungroupedProducts];
+
+            // Calculate analytics based on UNIQUE PHYSICAL PRODUCTS
+            const withWC = uniquePhysicalProducts.filter((p: Product) => p.woocommerceId).length;
+            const withML = uniquePhysicalProducts.filter((p: Product) => p.mercadoLibreId).length;
+            const withBoth = uniquePhysicalProducts.filter((p: Product) => p.woocommerceId && p.mercadoLibreId).length;
+            const lowStock = uniquePhysicalProducts.filter((p: Product) => p.stock > 0 && p.stock <= 5).length;
+            const outOfStock = uniquePhysicalProducts.filter((p: Product) => p.stock === 0).length;
+
+            // Group analytics (Total Groups stays the same)
             const groupIds = new Set(productsData.filter((p: Product) => p.groupId).map((p: Product) => p.groupId));
             const totalGroups = groupIds.size;
             const ungrouped = productsData.filter((p: Product) => !p.groupId).length;
 
-            const prices = productsData.map((p: Product) => Number(p.price)).filter((p: number) => p > 0);
+            const prices = uniquePhysicalProducts.map((p: Product) => Number(p.price)).filter((p: number) => p > 0);
             const avgPrice = prices.length > 0 ? prices.reduce((a: number, b: number) => a + b, 0) / prices.length : 0;
-            const totalValue = productsData.reduce((sum: number, p: Product) => sum + (Number(p.price) * p.stock), 0);
+            // Total Value = Sum of (Price * Stock) for unique physical products
+            const totalValue = uniquePhysicalProducts.reduce((sum: number, p: Product) => sum + (Number(p.price) * p.stock), 0);
 
-            // Cost and margin calculations
-            const productsWithCost = productsData.filter((p: Product) => p.costPrice && Number(p.costPrice) > 0);
+            // Cost and margin calculations (Use uniquePhysicalProducts)
+            const productsWithCost = uniquePhysicalProducts.filter((p: Product) => p.costPrice && Number(p.costPrice) > 0);
             const costs = productsWithCost.map((p: Product) => Number(p.costPrice));
             const avgCost = costs.length > 0 ? costs.reduce((a: number, b: number) => a + b, 0) / costs.length : 0;
             const totalCost = productsWithCost.reduce((sum: number, p: Product) => sum + (Number(p.costPrice) * p.stock), 0);
@@ -123,22 +144,22 @@ export default function Analytics() {
             const potentialProfit = totalValue - totalCost;
             const roi = totalCost > 0 ? (potentialProfit / totalCost) * 100 : 0;
 
-            // Marketplace exclusivity
+            // Marketplace exclusivity (Listing level, so use productsData)
             const onlyWC = productsData.filter((p: Product) => p.woocommerceId && !p.mercadoLibreId).length;
             const onlyML = productsData.filter((p: Product) => p.mercadoLibreId && !p.woocommerceId).length;
 
-            // Listing types (ML)
+            // Listing types (ML) (Listing level, use productsData)
             const classic = productsData.filter((p: Product) => p.listingType === 'classic').length;
             const premium = productsData.filter((p: Product) => p.listingType === 'premium').length;
             const otherListings = productsData.filter((p: Product) => p.listingType && p.listingType !== 'classic' && p.listingType !== 'premium').length;
 
-            // Inventory metrics
-            const stocks = productsData.map((p: Product) => p.stock).filter((s: number) => s > 0);
-            const totalUnits = productsData.reduce((sum: number, p: Product) => sum + p.stock, 0);
+            // Inventory metrics (Use uniquePhysicalProducts)
+            const stocks = uniquePhysicalProducts.map((p: Product) => p.stock).filter((s: number) => s > 0);
+            const totalUnits = uniquePhysicalProducts.reduce((sum: number, p: Product) => sum + p.stock, 0);
             const avgStock = stocks.length > 0 ? totalUnits / stocks.length : 0;
-            const highStock = productsData.filter((p: Product) => p.stock > 50).length;
+            const highStock = uniquePhysicalProducts.filter((p: Product) => p.stock > 50).length;
 
-            // Median price
+            // Median price (Use uniquePhysicalProducts)
             const sortedPrices = [...prices].sort((a, b) => a - b);
             const medianPrice = sortedPrices.length > 0
                 ? sortedPrices.length % 2 === 0
