@@ -9,6 +9,10 @@ interface AnalyticsData {
         withBoth: number;
         lowStock: number;
         outOfStock: number;
+        totalGroups: number;
+        ungrouped: number;
+        onlyWC: number;
+        onlyML: number;
     };
     sync: {
         lastSync: string | null;
@@ -20,6 +24,25 @@ interface AnalyticsData {
         minPrice: number;
         maxPrice: number;
         totalValue: number;
+        medianPrice: number;
+    };
+    costs: {
+        totalCost: number;
+        avgCost: number;
+        avgMargin: number;
+        potentialProfit: number;
+        productsWithCost: number;
+        roi: number;
+    };
+    listings: {
+        classic: number;
+        premium: number;
+        other: number;
+    };
+    inventory: {
+        totalUnits: number;
+        avgStock: number;
+        highStock: number;
     };
     webhooks: {
         total: number;
@@ -32,7 +55,10 @@ interface Product {
     sku: string;
     title: string;
     price: number;
+    costPrice?: number;
     stock: number;
+    groupId?: string;
+    listingType?: string;
     woocommerceId?: string;
     mercadoLibreId?: string;
     images?: string[];
@@ -68,9 +94,57 @@ export default function Analytics() {
             const lowStock = productsData.filter((p: Product) => p.stock > 0 && p.stock <= 5).length;
             const outOfStock = productsData.filter((p: Product) => p.stock === 0).length;
 
+            // Group analytics
+            const groupIds = new Set(productsData.filter((p: Product) => p.groupId).map((p: Product) => p.groupId));
+            const totalGroups = groupIds.size;
+            const ungrouped = productsData.filter((p: Product) => !p.groupId).length;
+
             const prices = productsData.map((p: Product) => Number(p.price)).filter((p: number) => p > 0);
             const avgPrice = prices.length > 0 ? prices.reduce((a: number, b: number) => a + b, 0) / prices.length : 0;
             const totalValue = productsData.reduce((sum: number, p: Product) => sum + (Number(p.price) * p.stock), 0);
+
+            // Cost and margin calculations
+            const productsWithCost = productsData.filter((p: Product) => p.costPrice && Number(p.costPrice) > 0);
+            const costs = productsWithCost.map((p: Product) => Number(p.costPrice));
+            const avgCost = costs.length > 0 ? costs.reduce((a: number, b: number) => a + b, 0) / costs.length : 0;
+            const totalCost = productsWithCost.reduce((sum: number, p: Product) => sum + (Number(p.costPrice) * p.stock), 0);
+
+            // Calculate average margin (only for products with cost)
+            let avgMargin = 0;
+            if (productsWithCost.length > 0) {
+                const margins = productsWithCost.map((p: Product) => {
+                    const cost = Number(p.costPrice) || 0;
+                    const price = Number(p.price) || 0;
+                    return price > 0 ? ((price - cost) / price) * 100 : 0;
+                });
+                avgMargin = margins.reduce((a: number, b: number) => a + b, 0) / margins.length;
+            }
+
+            const potentialProfit = totalValue - totalCost;
+            const roi = totalCost > 0 ? (potentialProfit / totalCost) * 100 : 0;
+
+            // Marketplace exclusivity
+            const onlyWC = productsData.filter((p: Product) => p.woocommerceId && !p.mercadoLibreId).length;
+            const onlyML = productsData.filter((p: Product) => p.mercadoLibreId && !p.woocommerceId).length;
+
+            // Listing types (ML)
+            const classic = productsData.filter((p: Product) => p.listingType === 'classic').length;
+            const premium = productsData.filter((p: Product) => p.listingType === 'premium').length;
+            const otherListings = productsData.filter((p: Product) => p.listingType && p.listingType !== 'classic' && p.listingType !== 'premium').length;
+
+            // Inventory metrics
+            const stocks = productsData.map((p: Product) => p.stock).filter((s: number) => s > 0);
+            const totalUnits = productsData.reduce((sum: number, p: Product) => sum + p.stock, 0);
+            const avgStock = stocks.length > 0 ? totalUnits / stocks.length : 0;
+            const highStock = productsData.filter((p: Product) => p.stock > 50).length;
+
+            // Median price
+            const sortedPrices = [...prices].sort((a, b) => a - b);
+            const medianPrice = sortedPrices.length > 0
+                ? sortedPrices.length % 2 === 0
+                    ? (sortedPrices[sortedPrices.length / 2 - 1] + sortedPrices[sortedPrices.length / 2]) / 2
+                    : sortedPrices[Math.floor(sortedPrices.length / 2)]
+                : 0;
 
             const today = new Date().toISOString().split('T')[0];
             const todayWebhooks = webhookLogs.filter((w: any) =>
@@ -84,7 +158,11 @@ export default function Analytics() {
                     withML,
                     withBoth,
                     lowStock,
-                    outOfStock
+                    outOfStock,
+                    totalGroups,
+                    ungrouped,
+                    onlyWC,
+                    onlyML
                 },
                 sync: {
                     lastSync: syncStatus.lastSync,
@@ -95,7 +173,26 @@ export default function Analytics() {
                     avgPrice,
                     minPrice: prices.length > 0 ? Math.min(...prices) : 0,
                     maxPrice: prices.length > 0 ? Math.max(...prices) : 0,
-                    totalValue
+                    totalValue,
+                    medianPrice
+                },
+                costs: {
+                    totalCost,
+                    avgCost,
+                    avgMargin,
+                    potentialProfit,
+                    productsWithCost: productsWithCost.length,
+                    roi
+                },
+                listings: {
+                    classic,
+                    premium,
+                    other: otherListings
+                },
+                inventory: {
+                    totalUnits,
+                    avgStock,
+                    highStock
                 },
                 webhooks: {
                     total: webhookLogs.length,
@@ -249,6 +346,168 @@ export default function Analytics() {
                                         <span className="text-xl font-bold text-green-400">{formatCurrency(analytics.pricing.totalValue)}</span>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Margin & Profit Analysis */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        {/* Margins */}
+                        <div className="bg-gradient-to-br from-purple-900/50 to-purple-800/30 rounded-lg p-6 border border-purple-600/50">
+                            <h2 className="text-xl font-bold mb-4">📊 Margens e Lucro</h2>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Custo Médio</span>
+                                    <span className="text-white font-bold">{formatCurrency(analytics.costs.avgCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Margem Média</span>
+                                    <span className={`font-bold ${analytics.costs.avgMargin >= 30 ? 'text-green-400' : analytics.costs.avgMargin >= 15 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                        {analytics.costs.avgMargin.toFixed(1)}%
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Custo Total Estoque</span>
+                                    <span className="text-orange-400 font-bold">{formatCurrency(analytics.costs.totalCost)}</span>
+                                </div>
+                                <div className="pt-3 border-t border-purple-600/30">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-400">Lucro Potencial</span>
+                                        <span className={`text-xl font-bold ${analytics.costs.potentialProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            {formatCurrency(analytics.costs.potentialProfit)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-2">
+                                    Baseado em {analytics.costs.productsWithCost} produtos com custo cadastrado
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Groups */}
+                        <div className="bg-gradient-to-br from-cyan-900/50 to-cyan-800/30 rounded-lg p-6 border border-cyan-600/50">
+                            <h2 className="text-xl font-bold mb-4">🔗 Agrupamentos</h2>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Total de Grupos</span>
+                                    <span className="text-cyan-400 font-bold text-2xl">{analytics.products.totalGroups}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Produtos Agrupados</span>
+                                    <span className="text-white">{analytics.products.total - analytics.products.ungrouped}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Produtos Sem Grupo</span>
+                                    <span className="text-yellow-400">{analytics.products.ungrouped}</span>
+                                </div>
+                                {analytics.products.totalGroups > 0 && (
+                                    <div className="pt-3 border-t border-cyan-600/30">
+                                        <div className="text-xs text-gray-500">
+                                            Média de {((analytics.products.total - analytics.products.ungrouped) / analytics.products.totalGroups).toFixed(1)} produtos por grupo
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Additional Metrics Row */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        {/* ROI */}
+                        <div className="bg-gradient-to-br from-green-900/50 to-green-800/30 rounded-lg p-4 border border-green-600/50">
+                            <div className="text-gray-400 text-sm mb-1">ROI (Retorno)</div>
+                            <div className={`text-2xl font-bold ${analytics.costs.roi >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {analytics.costs.roi.toFixed(1)}%
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">Lucro / Custo Total</div>
+                        </div>
+
+                        {/* Inventory */}
+                        <div className="bg-gradient-to-br from-amber-900/50 to-amber-800/30 rounded-lg p-4 border border-amber-600/50">
+                            <div className="text-gray-400 text-sm mb-1">Unidades Total</div>
+                            <div className="text-2xl font-bold text-amber-400">
+                                {analytics.inventory.totalUnits.toLocaleString()}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                                Média: {analytics.inventory.avgStock.toFixed(0)} • Alto: {analytics.inventory.highStock}
+                            </div>
+                        </div>
+
+                        {/* Median Price */}
+                        <div className="bg-gradient-to-br from-indigo-900/50 to-indigo-800/30 rounded-lg p-4 border border-indigo-600/50">
+                            <div className="text-gray-400 text-sm mb-1">Preço Mediano</div>
+                            <div className="text-2xl font-bold text-indigo-400">
+                                {formatCurrency(analytics.pricing.medianPrice)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">vs Média: {formatCurrency(analytics.pricing.avgPrice)}</div>
+                        </div>
+
+                        {/* Listing Types */}
+                        <div className="bg-gradient-to-br from-pink-900/50 to-pink-800/30 rounded-lg p-4 border border-pink-600/50">
+                            <div className="text-gray-400 text-sm mb-1">Tipos de Anúncio ML</div>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="text-pink-400 font-bold">⭐ {analytics.listings.premium}</span>
+                                <span className="text-gray-500">|</span>
+                                <span className="text-gray-300">🏷️ {analytics.listings.classic}</span>
+                                {analytics.listings.other > 0 && (
+                                    <>
+                                        <span className="text-gray-500">|</span>
+                                        <span className="text-gray-400">📦 {analytics.listings.other}</span>
+                                    </>
+                                )}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">Premium • Classic • Outros</div>
+                        </div>
+                    </div>
+
+                    {/* Marketplace Coverage */}
+                    <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 mb-6">
+                        <h2 className="text-xl font-bold mb-4">🌐 Cobertura de Marketplaces</h2>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                            <div className="text-center">
+                                <div className="text-3xl font-bold text-blue-400">{analytics.products.withWC}</div>
+                                <div className="text-sm text-gray-400">WooCommerce</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-3xl font-bold text-yellow-400">{analytics.products.withML}</div>
+                                <div className="text-sm text-gray-400">MercadoLibre</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-3xl font-bold text-green-400">{analytics.products.withBoth}</div>
+                                <div className="text-sm text-gray-400">Ambos</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-3xl font-bold text-cyan-400">{analytics.products.onlyWC}</div>
+                                <div className="text-sm text-gray-400">Só WC</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-3xl font-bold text-orange-400">{analytics.products.onlyML}</div>
+                                <div className="text-sm text-gray-400">Só ML</div>
+                            </div>
+                        </div>
+                        {/* Coverage Bar */}
+                        <div className="mt-4">
+                            <div className="flex h-4 rounded-full overflow-hidden bg-gray-700">
+                                <div
+                                    className="bg-green-500"
+                                    style={{ width: `${(analytics.products.withBoth / analytics.products.total) * 100}%` }}
+                                    title="Ambos"
+                                />
+                                <div
+                                    className="bg-cyan-500"
+                                    style={{ width: `${(analytics.products.onlyWC / analytics.products.total) * 100}%` }}
+                                    title="Só WC"
+                                />
+                                <div
+                                    className="bg-orange-500"
+                                    style={{ width: `${(analytics.products.onlyML / analytics.products.total) * 100}%` }}
+                                    title="Só ML"
+                                />
+                            </div>
+                            <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>🟢 Ambos ({((analytics.products.withBoth / analytics.products.total) * 100).toFixed(0)}%)</span>
+                                <span>🔵 Só WC ({((analytics.products.onlyWC / analytics.products.total) * 100).toFixed(0)}%)</span>
+                                <span>🟠 Só ML ({((analytics.products.onlyML / analytics.products.total) * 100).toFixed(0)}%)</span>
                             </div>
                         </div>
                     </div>
