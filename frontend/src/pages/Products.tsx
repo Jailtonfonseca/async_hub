@@ -43,7 +43,56 @@ export default function Products() {
     const [showModal, setShowModal] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
     const [saving, setSaving] = useState(false);
+    const [viewMode, setViewMode] = useState<'flat' | 'grouped'>('flat');
+    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [syncingAll, setSyncingAll] = useState(false);
+
+    const toggleGroup = (groupId: string) => {
+        const newExpanded = new Set(expandedGroups);
+        if (newExpanded.has(groupId)) {
+            newExpanded.delete(groupId);
+        } else {
+            newExpanded.add(groupId);
+        }
+        setExpandedGroups(newExpanded);
+    };
+
+    // Grouping Logic
+    const groupedProducts = products.reduce((acc: Record<string, Product[]>, product) => {
+        if (product.groupId) {
+            if (!acc[product.groupId]) {
+                acc[product.groupId] = [];
+            }
+            acc[product.groupId].push(product);
+        }
+        return acc;
+    }, {} as Record<string, Product[]>);
+
+    // Prepare display list
+    const getDisplayItems = () => {
+        if (viewMode === 'flat') return products;
+
+        const displayed: (Product | { type: 'group', id: string, products: Product[] })[] = [];
+        const processedGroups = new Set<string>();
+
+        products.forEach(p => {
+            if (p.groupId) {
+                if (!processedGroups.has(p.groupId)) {
+                    displayed.push({
+                        type: 'group',
+                        id: p.groupId,
+                        products: groupedProducts[p.groupId]
+                    });
+                    processedGroups.add(p.groupId);
+                }
+            } else {
+                displayed.push(p);
+            }
+        });
+        return displayed;
+    };
+
+    const displayItems = getDisplayItems();
 
     const loadProducts = async () => {
         setLoading(true);
@@ -148,11 +197,139 @@ export default function Products() {
         setEditingProduct({ ...editingProduct, [field]: value });
     };
 
+    // Helper to render a Product Row (reusable for flat or group child)
+    const renderProductRow = (product: Product, isChild = false) => (
+        <tr key={product.id} className={`border-t border-gray-700 hover:bg-gray-750 ${isChild ? 'bg-gray-800/50' : ''}`}>
+            <td className={`px-2 py-2 text-center ${isChild ? 'pl-8' : ''}`}>
+                <div className="flex items-center justify-center">
+                    {isChild && <span className="text-gray-500 mr-2">└</span>}
+                    {product.images && product.images.length > 0 ? (
+                        <img
+                            src={product.images[0]}
+                            alt={product.title}
+                            className="w-12 h-12 object-cover rounded"
+                            onError={(e: any) => {
+                                (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23374151" width="100" height="100"/><text x="50" y="55" text-anchor="middle" fill="%239CA3AF" font-size="30">📦</text></svg>';
+                            }}
+                        />
+                    ) : (
+                        <div className="w-12 h-12 bg-gray-700 rounded flex items-center justify-center">
+                            <span className="text-2xl">📦</span>
+                        </div>
+                    )}
+                </div>
+            </td>
+            <td className="px-4 py-3 font-mono text-sm">
+                {product.sku}
+                {product.listingType && (
+                    <span className={`block text-xs ${product.listingType === 'premium' ? 'text-yellow-400' : 'text-gray-500'}`}>
+                        {product.listingType.toUpperCase()}
+                    </span>
+                )}
+            </td>
+            <td className="px-4 py-3">
+                {product.title}
+                {isChild && product.groupId && (
+                    <span className="ml-2 text-xs text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded">
+                        {product.groupId}
+                    </span>
+                )}
+            </td>
+            <td className="px-4 py-3 text-right">
+                R$ {Number(product.price).toFixed(2)}
+                {product.salePrice && (
+                    <span className="text-green-400 text-xs ml-1">
+                        → R$ {Number(product.salePrice).toFixed(2)}
+                    </span>
+                )}
+            </td>
+            <td className="px-4 py-3 text-right">
+                {product.costPrice ? (
+                    <span className="text-yellow-400">R$ {Number(product.costPrice).toFixed(2)}</span>
+                ) : (
+                    <span className="text-gray-500">-</span>
+                )}
+            </td>
+            <td className="px-4 py-3 text-right">{product.stock}</td>
+            <td className="px-4 py-3 text-right">
+                {product.costPrice ? (
+                    <span className="text-blue-400 font-medium">
+                        R$ {(Number(product.costPrice) * product.stock).toFixed(2)}
+                    </span>
+                ) : (
+                    <span className="text-gray-500">-</span>
+                )}
+            </td>
+            <td className="px-4 py-3 text-center">
+                {product.woocommerceId ? (
+                    <span className="text-green-400" title={product.woocommerceId}>✓</span>
+                ) : (
+                    <span className="text-gray-500">-</span>
+                )}
+            </td>
+            <td className="px-4 py-3 text-center">
+                {product.mercadoLibreId ? (
+                    <span className="text-green-400" title={product.mercadoLibreId}>✓</span>
+                ) : (
+                    <span className="text-gray-500">-</span>
+                )}
+            </td>
+            <td className="px-4 py-3 text-center">
+                <div className="flex justify-center gap-1">
+                    <button
+                        onClick={() => handleEdit(product)}
+                        className="px-2 py-1 bg-blue-700 hover:bg-blue-600 rounded text-xs"
+                        title="Editar"
+                    >
+                        ✏️
+                    </button>
+                    <button
+                        onClick={() => handleSync(product.id, 'woocommerce')}
+                        className="px-2 py-1 bg-green-700 hover:bg-green-600 rounded text-xs"
+                        title="Sincronizar com WooCommerce"
+                    >
+                        WC
+                    </button>
+                    <button
+                        onClick={() => handleSync(product.id, 'mercadolibre')}
+                        className="px-2 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-xs"
+                        title="Sincronizar com Mercado Livre"
+                    >
+                        ML
+                    </button>
+                    <button
+                        onClick={() => handleDelete(product)}
+                        className="px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-xs"
+                        title="Excluir"
+                    >
+                        🗑️
+                    </button>
+                </div>
+            </td>
+        </tr>
+    );
+
     return (
         <div className="p-6">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold">Produtos</h1>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
+                    {/* View Mode Toggle */}
+                    <div className="bg-gray-700 rounded-lg p-1 flex mr-4">
+                        <button
+                            onClick={() => setViewMode('flat')}
+                            className={`px-3 py-1 rounded text-sm ${viewMode === 'flat' ? 'bg-gray-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Lista
+                        </button>
+                        <button
+                            onClick={() => setViewMode('grouped')}
+                            className={`px-3 py-1 rounded text-sm ${viewMode === 'grouped' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Agrupado
+                        </button>
+                    </div>
+
                     <button
                         onClick={handleNew}
                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
@@ -207,7 +384,7 @@ export default function Products() {
                         <thead className="bg-gray-700">
                             <tr>
                                 <th className="px-2 py-3 text-center w-16">Foto</th>
-                                <th className="px-4 py-3 text-left">SKU</th>
+                                <th className="px-4 py-3 text-left">SKU / Grupo</th>
                                 <th className="px-4 py-3 text-left">Título</th>
                                 <th className="px-4 py-3 text-right">Preço</th>
                                 <th className="px-4 py-3 text-right">Custo</th>
@@ -219,99 +396,58 @@ export default function Products() {
                             </tr>
                         </thead>
                         <tbody>
-                            {products.map(product => (
-                                <tr key={product.id} className="border-t border-gray-700 hover:bg-gray-750">
-                                    <td className="px-2 py-2 text-center">
-                                        {product.images && product.images.length > 0 ? (
-                                            <img
-                                                src={product.images[0]}
-                                                alt={product.title}
-                                                className="w-12 h-12 object-cover rounded mx-auto"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23374151" width="100" height="100"/><text x="50" y="55" text-anchor="middle" fill="%239CA3AF" font-size="30">📦</text></svg>';
-                                                }}
-                                            />
-                                        ) : (
-                                            <div className="w-12 h-12 bg-gray-700 rounded flex items-center justify-center mx-auto">
-                                                <span className="text-2xl">📦</span>
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 font-mono text-sm">{product.sku}</td>
-                                    <td className="px-4 py-3">{product.title}</td>
-                                    <td className="px-4 py-3 text-right">
-                                        R$ {Number(product.price).toFixed(2)}
-                                        {product.salePrice && (
-                                            <span className="text-green-400 text-xs ml-1">
-                                                → R$ {Number(product.salePrice).toFixed(2)}
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-right">
-                                        {product.costPrice ? (
-                                            <span className="text-yellow-400">R$ {Number(product.costPrice).toFixed(2)}</span>
-                                        ) : (
-                                            <span className="text-gray-500">-</span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-right">{product.stock}</td>
-                                    <td className="px-4 py-3 text-right">
-                                        {product.costPrice ? (
-                                            <span className="text-blue-400 font-medium">
-                                                R$ {(Number(product.costPrice) * product.stock).toFixed(2)}
-                                            </span>
-                                        ) : (
-                                            <span className="text-gray-500">-</span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center">
-                                        {product.woocommerceId ? (
-                                            <span className="text-green-400" title={product.woocommerceId}>✓</span>
-                                        ) : (
-                                            <span className="text-gray-500">-</span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center">
-                                        {product.mercadoLibreId ? (
-                                            <span className="text-green-400" title={product.mercadoLibreId}>✓</span>
-                                        ) : (
-                                            <span className="text-gray-500">-</span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center">
-                                        <div className="flex justify-center gap-1">
-                                            <button
-                                                onClick={() => handleEdit(product)}
-                                                className="px-2 py-1 bg-blue-700 hover:bg-blue-600 rounded text-xs"
-                                                title="Editar"
-                                            >
-                                                ✏️
-                                            </button>
-                                            <button
-                                                onClick={() => handleSync(product.id, 'woocommerce')}
-                                                className="px-2 py-1 bg-green-700 hover:bg-green-600 rounded text-xs"
-                                                title="Sincronizar com WooCommerce"
-                                            >
-                                                WC
-                                            </button>
-                                            <button
-                                                onClick={() => handleSync(product.id, 'mercadolibre')}
-                                                className="px-2 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-xs"
-                                                title="Sincronizar com Mercado Livre"
-                                            >
-                                                ML
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(product)}
-                                                className="px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-xs"
-                                                title="Excluir"
-                                            >
-                                                🗑️
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                            {displayItems.map((item: any, index: number) => {
+                                // Check if item is a group
+                                if ('type' in item && item.type === 'group') {
+                                    const group = item as { type: 'string', id: string, products: Product[] };
+                                    const isExpanded = expandedGroups.has(group.id);
+                                    // Use the first product as representative for some fields
+                                    const rep = group.products[0];
+                                    const totalStock = group.products[0].stock; // Shared stock concept
+                                    // Or sum? No, "Shared Stock". So it is just rep.stock.
+                                    // But wait, if they share stock, the total physical inventory is just rep.stock.
+
+                                    const totalValue = group.products.reduce((acc, p) => acc + (Number(p.costPrice || 0) * 0), 0) + (Number(rep.costPrice || 0) * rep.stock);
+                                    // Actually, value of the group in inventory is Cost * Stock. Since stock is shared, it is Cost * Stock ONCE.
+
+                                    return (
+                                        <>
+                                            {/* Group Master Row */}
+                                            <tr key={`group-${group.id}`} className="border-t border-gray-600 bg-gray-750 hover:bg-gray-700 cursor-pointer" onClick={() => toggleGroup(group.id)}>
+                                                <td className="px-2 py-2 text-center">
+                                                    <span className="text-xl">{isExpanded ? '📂' : '📁'}</span>
+                                                </td>
+                                                <td className="px-4 py-3 font-mono text-sm font-bold text-blue-300">
+                                                    {group.id} <span className="text-gray-500 text-xs font-normal">({group.products.length} itens)</span>
+                                                </td>
+                                                <td className="px-4 py-3 font-medium text-gray-300">
+                                                    {rep.title.split('-')[0]} <span className="text-gray-500 text-xs">(Agrupado)</span>
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-400">
+                                                    Varia
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-400">
+                                                    {rep.costPrice ? `R$ ${Number(rep.costPrice).toFixed(2)}` : '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-bold text-white">
+                                                    {rep.stock}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-bold text-blue-400">
+                                                    {rep.costPrice ? `R$ ${(Number(rep.costPrice) * rep.stock).toFixed(2)}` : '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-center" colSpan={3}>
+                                                    <span className="text-xs text-gray-500">Clique para expandir</span>
+                                                </td>
+                                            </tr>
+                                            {/* Children Rows */}
+                                            {isExpanded && group.products.map(p => renderProductRow(p, true))}
+                                        </>
+                                    );
+                                } else {
+                                    // Single product
+                                    return renderProductRow(item as Product);
+                                }
+                            })}
                         </tbody>
                     </table>
                 </div>
