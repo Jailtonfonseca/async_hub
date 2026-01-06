@@ -198,6 +198,9 @@ async function processMLItemUpdate(resource: string, userId: number) {
     });
 
     if (localProduct) {
+        // Check if stock changed
+        const stockChanged = localProduct.stock !== mlProduct.stock;
+
         // Update local product
         localProduct.title = mlProduct.title;
         localProduct.price = mlProduct.price;
@@ -206,6 +209,21 @@ async function processMLItemUpdate(resource: string, userId: number) {
         localProduct.lastSyncedAt = new Date();
         await productRepo.save(localProduct);
         console.log(`[Webhook ML] Updated product: ${localProduct.sku}`);
+
+        // Sync stock to other products in the same group
+        if (stockChanged && localProduct.groupId) {
+            const groupProducts = await productRepo.find({
+                where: { groupId: localProduct.groupId },
+            });
+            for (const gp of groupProducts) {
+                if (gp.id !== localProduct.id && gp.stock !== localProduct.stock) {
+                    gp.stock = localProduct.stock;
+                    gp.lastSyncedAt = new Date();
+                    await productRepo.save(gp);
+                    console.log(`[Webhook ML] Synced stock to group member: ${gp.sku}`);
+                }
+            }
+        }
 
         // Optionally sync to WooCommerce
         await syncToWooCommerce(localProduct);
@@ -219,7 +237,6 @@ async function processMLItemUpdate(resource: string, userId: number) {
             stock: mlProduct.stock,
             images: mlProduct.images,
             mercadoLibreId: itemId,
-            sourceMarketplace: "mercadolibre",
             lastSyncedAt: new Date()
         });
         await productRepo.save(newProduct);
@@ -257,15 +274,34 @@ async function processWCProductUpdate(wcProduct: any) {
     });
 
     if (localProduct) {
+        // Check if stock changed
+        const newStock = wcProduct.stock_quantity || 0;
+        const stockChanged = localProduct.stock !== newStock;
+
         // Update local product from WC data
         localProduct.title = wcProduct.name || localProduct.title;
         localProduct.price = parseFloat(wcProduct.regular_price) || localProduct.price;
         localProduct.salePrice = wcProduct.sale_price ? parseFloat(wcProduct.sale_price) : undefined;
-        localProduct.stock = wcProduct.stock_quantity || 0;
+        localProduct.stock = newStock;
         localProduct.woocommerceId = wcProduct.id?.toString();
         localProduct.lastSyncedAt = new Date();
         await productRepo.save(localProduct);
         console.log(`[Webhook WC] Updated product: ${localProduct.sku}`);
+
+        // Sync stock to other products in the same group
+        if (stockChanged && localProduct.groupId) {
+            const groupProducts = await productRepo.find({
+                where: { groupId: localProduct.groupId },
+            });
+            for (const gp of groupProducts) {
+                if (gp.id !== localProduct.id && gp.stock !== localProduct.stock) {
+                    gp.stock = localProduct.stock;
+                    gp.lastSyncedAt = new Date();
+                    await productRepo.save(gp);
+                    console.log(`[Webhook WC] Synced stock to group member: ${gp.sku}`);
+                }
+            }
+        }
 
         // Sync to Mercado Libre
         await syncToMercadoLibre(localProduct);
@@ -280,7 +316,6 @@ async function processWCProductUpdate(wcProduct: any) {
             stock: wcProduct.stock_quantity || 0,
             images: wcProduct.images?.map((img: any) => img.src) || [],
             woocommerceId: wcProduct.id?.toString(),
-            sourceMarketplace: "woocommerce",
             lastSyncedAt: new Date()
         });
         await productRepo.save(newProduct);
