@@ -310,10 +310,10 @@ export default function Products() {
     );
 
     return (
-        <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl font-bold">Produtos</h1>
-                <div className="flex gap-2 items-center">
+        <div className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+                <h1 className="text-2xl sm:text-3xl font-bold">Produtos</h1>
+                <div className="flex flex-wrap gap-2 items-center">
                     {/* View Mode Toggle */}
                     <div className="bg-gray-700 rounded-lg p-1 flex mr-4">
                         <button
@@ -354,7 +354,7 @@ export default function Products() {
             </div>
 
             {/* Sync All buttons */}
-            <div className="mb-4 flex gap-2">
+            <div className="mb-4 flex flex-wrap gap-2">
                 <button
                     onClick={() => handleSyncAll('woocommerce')}
                     disabled={syncingAll}
