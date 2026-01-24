@@ -95,10 +95,19 @@ export class ProductController {
                 return res.status(404).json({ error: "Group not found" });
             }
 
-            // Update all products in the group
+            const results: any[] = [];
+
+            // Update all products in the group and sync
             for (const product of products) {
+                const oldStock = product.stock;
                 product.stock = stock;
                 await this.productRepo.save(product);
+
+                // Sync if stock changed
+                if (Number(oldStock) !== Number(stock)) {
+                    const syncResult = await this.syncToMarketplaces(product, { stockChanged: true });
+                    results.push({ id: product.id, sku: product.sku, syncResult });
+                }
             }
 
             res.json({
@@ -106,6 +115,7 @@ export class ProductController {
                 groupId,
                 stock,
                 productsUpdated: products.length,
+                results
             });
         } catch (error) {
             next(error);
@@ -152,63 +162,13 @@ export class ProductController {
             await this.productRepo.save(product);
 
             // Auto-sync to marketplaces if price or stock changed
-            const syncResults: any = { local: true, woocommerce: null, mercadolibre: null };
+            let syncResults = {};
 
             if (priceChanged || salePriceChanged || stockChanged) {
                 console.log(`[ProductSync] Changes detected - price: ${priceChanged}, salePrice: ${salePriceChanged}, stock: ${stockChanged}`);
 
-                // Sync to WooCommerce
-                if (product.woocommerceId) {
-                    try {
-                        const wcConnection = await this.connectionRepo.findOneBy({ marketplace: "woocommerce" });
-                        if (wcConnection && wcConnection.isConnected) {
-                            const wcAdapter = new WooCommerceAdapter({
-                                apiUrl: wcConnection.apiUrl || "",
-                                apiKey: wcConnection.apiKey || "",
-                                apiSecret: wcConnection.apiSecret || "",
-                            });
-
-                            if (stockChanged) {
-                                await wcAdapter.updateStock(product.woocommerceId, product.stock);
-                            }
-                            if (priceChanged || salePriceChanged) {
-                                await wcAdapter.updatePrice(product.woocommerceId, Number(product.price), product.salePrice ? Number(product.salePrice) : undefined);
-                            }
-
-                            syncResults.woocommerce = "synced";
-                            console.log(`[ProductSync] Synced to WooCommerce: ${product.sku}`);
-                        }
-                    } catch (e: any) {
-                        syncResults.woocommerce = `error: ${e.message}`;
-                        console.error(`[ProductSync] WC sync error: ${e.message}`);
-                    }
-                }
-
-                // Sync to Mercado Libre
-                if (product.mercadoLibreId) {
-                    try {
-                        const mlConnection = await this.connectionRepo.findOneBy({ marketplace: "mercadolibre" });
-                        if (mlConnection && mlConnection.accessToken) {
-                            const mlAdapter = new MercadoLibreAdapter({
-                                accessToken: mlConnection.accessToken,
-                                userId: mlConnection.userId || "",
-                            });
-
-                            if (stockChanged) {
-                                await mlAdapter.updateStock(product.mercadoLibreId, product.stock);
-                            }
-                            if (priceChanged) {
-                                await mlAdapter.updatePrice(product.mercadoLibreId, Number(product.price));
-                            }
-
-                            syncResults.mercadolibre = "synced";
-                            console.log(`[ProductSync] Synced to MercadoLibre: ${product.sku}`);
-                        }
-                    } catch (e: any) {
-                        syncResults.mercadolibre = `error: ${e.message}`;
-                        console.error(`[ProductSync] ML sync error: ${e.message}`);
-                    }
-                }
+                // Sync THIS product
+                syncResults = await this.syncToMarketplaces(product, { priceChanged, salePriceChanged, stockChanged });
 
                 // Sync stock and costPrice to other products in the same group
                 const costPriceChanged = req.body.costPrice !== undefined && Number(req.body.costPrice) !== Number(product.costPrice);
@@ -219,12 +179,17 @@ export class ProductController {
                     });
 
                     let groupSynced = 0;
+                    const groupResults: any = {};
+
                     for (const gp of groupProducts) {
-                        let changed = false;
                         if (gp.id !== product.id) {
-                            if (stockChanged && gp.stock !== product.stock) {
+                            let changed = false;
+                            let groupStockChanged = false;
+
+                            if (stockChanged && Number(gp.stock) !== Number(product.stock)) {
                                 gp.stock = product.stock;
                                 changed = true;
+                                groupStockChanged = true;
                             }
                             if (costPriceChanged && Number(gp.costPrice) !== Number(product.costPrice)) {
                                 gp.costPrice = product.costPrice;
@@ -234,14 +199,20 @@ export class ProductController {
                             if (changed) {
                                 await this.productRepo.save(gp);
                                 groupSynced++;
+
+                                // CRITICAL FIX: If stock changed, we MUST sync this grouped product to its marketplace too!
+                                if (groupStockChanged) {
+                                    const gpSyncResult = await this.syncToMarketplaces(gp, { stockChanged: true });
+                                    groupResults[gp.sku] = gpSyncResult;
+                                }
                             }
                         }
                     }
 
                     if (groupSynced > 0) {
                         console.log(`[ProductSync] Updated stock/cost for ${groupSynced} products in group ${product.groupId}`);
-                        (syncResults as any).groupSync = `${groupSynced} products updated`;
                     }
+                    (syncResults as any).groupPropagation = groupResults;
                 }
             }
 
@@ -436,4 +407,65 @@ export class ProductController {
             next(error);
         }
     };
+
+    // Helper method to sync a single product to all its connected marketplaces
+    private async syncToMarketplaces(product: Product, changes: { priceChanged?: boolean; salePriceChanged?: boolean; stockChanged?: boolean }) {
+        const syncResults: any = { woocommerce: null, mercadolibre: null };
+        const { priceChanged, salePriceChanged, stockChanged } = changes;
+
+        // Sync to WooCommerce
+        if (product.woocommerceId) {
+            try {
+                const wcConnection = await this.connectionRepo.findOneBy({ marketplace: "woocommerce" });
+                if (wcConnection && wcConnection.isConnected) {
+                    const wcAdapter = new WooCommerceAdapter({
+                        apiUrl: wcConnection.apiUrl || "",
+                        apiKey: wcConnection.apiKey || "",
+                        apiSecret: wcConnection.apiSecret || "",
+                    });
+
+                    if (stockChanged) {
+                        await wcAdapter.updateStock(product.woocommerceId, product.stock);
+                    }
+                    if (priceChanged || salePriceChanged) {
+                        await wcAdapter.updatePrice(product.woocommerceId, Number(product.price), product.salePrice ? Number(product.salePrice) : undefined);
+                    }
+
+                    syncResults.woocommerce = "synced";
+                    console.log(`[ProductSync] Synced to WooCommerce: ${product.sku}`);
+                }
+            } catch (e: any) {
+                syncResults.woocommerce = `error: ${e.message}`;
+                console.error(`[ProductSync] WC sync error: ${e.message}`);
+            }
+        }
+
+        // Sync to Mercado Libre
+        if (product.mercadoLibreId) {
+            try {
+                const mlConnection = await this.connectionRepo.findOneBy({ marketplace: "mercadolibre" });
+                if (mlConnection && mlConnection.accessToken) {
+                    const mlAdapter = new MercadoLibreAdapter({
+                        accessToken: mlConnection.accessToken,
+                        userId: mlConnection.userId || "",
+                    });
+
+                    if (stockChanged) {
+                        await mlAdapter.updateStock(product.mercadoLibreId, product.stock);
+                    }
+                    if (priceChanged) {
+                        await mlAdapter.updatePrice(product.mercadoLibreId, Number(product.price));
+                    }
+
+                    syncResults.mercadolibre = "synced";
+                    console.log(`[ProductSync] Synced to MercadoLibre: ${product.sku}`);
+                }
+            } catch (e: any) {
+                syncResults.mercadolibre = `error: ${e.message}`;
+                console.error(`[ProductSync] ML sync error: ${e.message}`);
+            }
+        }
+
+        return syncResults;
+    }
 }
