@@ -174,7 +174,7 @@ async function processMLItemUpdate(resource: string, userId: number) {
 
     const connection = await connectionRepo.findOneBy({ marketplace: "mercadolibre" });
     if (!connection || !connection.accessToken) {
-        console.log("[Webhook ML] No valid ML connection");
+        console.error("[Webhook ML] No valid ML connection for item update", { itemId });
         return;
     }
 
@@ -185,7 +185,7 @@ async function processMLItemUpdate(resource: string, userId: number) {
 
     const mlProduct = await adapter.getProduct(itemId);
     if (!mlProduct) {
-        console.log(`[Webhook ML] Product ${itemId} not found`);
+        console.error("[Webhook ML] Product not found on ML", { itemId });
         return;
     }
 
@@ -269,7 +269,7 @@ async function processMLOrderUpdate(resource: string, userId: number) {
 
     const order = await adapter.getOrder(orderId);
     if (!order) {
-        console.log(`[Webhook ML] Order ${orderId} not found`);
+        console.error("[Webhook ML] Order not found on ML", { orderId });
         return;
     }
 
@@ -344,7 +344,7 @@ async function processMLOrderUpdate(resource: string, userId: number) {
                 }
             }
         } else {
-            console.log(`[Webhook ML] Product ${itemId} not found locally. Skipping stock update.`);
+            console.error("[Webhook ML] Product not found locally for order item", { itemId, orderId });
         }
     }
 }

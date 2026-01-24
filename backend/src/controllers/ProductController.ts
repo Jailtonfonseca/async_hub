@@ -95,27 +95,33 @@ export class ProductController {
                 return res.status(404).json({ error: "Group not found" });
             }
 
-            const results: any[] = [];
+            // Update all products in the group and sync concurrently
+            const updatePromises = products.map(async (product) => {
+                try {
+                    const oldStock = product.stock;
+                    product.stock = stock;
+                    await this.productRepo.save(product);
 
-            // Update all products in the group and sync
-            for (const product of products) {
-                const oldStock = product.stock;
-                product.stock = stock;
-                await this.productRepo.save(product);
-
-                // Sync if stock changed
-                if (Number(oldStock) !== Number(stock)) {
-                    const syncResult = await this.syncToMarketplaces(product, { stockChanged: true });
-                    results.push({ id: product.id, sku: product.sku, syncResult });
+                    // Sync if stock changed
+                    if (Number(oldStock) !== Number(stock)) {
+                        const syncResult = await this.syncToMarketplaces(product, { stockChanged: true });
+                        return { status: 'fulfilled', id: product.id, sku: product.sku, syncResult };
+                    }
+                    return { status: 'fulfilled', id: product.id, sku: product.sku, syncResult: 'no change' };
+                } catch (error: any) {
+                    return { status: 'rejected', id: product.id, sku: product.sku, error: error.message };
                 }
-            }
+            });
+
+            const results = await Promise.allSettled(updatePromises);
+            const processedResults = results.map((r: any) => r.value || r.reason);
 
             res.json({
                 success: true,
                 groupId,
                 stock,
                 productsUpdated: products.length,
-                results
+                results: processedResults
             });
         } catch (error) {
             next(error);
@@ -136,6 +142,14 @@ export class ProductController {
 
     create = async (req: Request, res: Response, next: NextFunction) => {
         try {
+            // Check for duplicate SKU
+            if (req.body.sku) {
+                const existing = await this.productRepo.findOne({ where: { sku: req.body.sku } });
+                if (existing) {
+                    return res.status(409).json({ error: "SKU already exists", sku: req.body.sku });
+                }
+            }
+
             const product = this.productRepo.create(req.body);
             await this.productRepo.save(product);
             res.status(201).json(product);
