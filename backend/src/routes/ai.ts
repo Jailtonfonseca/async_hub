@@ -3,6 +3,10 @@ import { AppDataSource } from "../data-source";
 import { AdSuggestion } from "../entities/AdSuggestion";
 import { adSuggestionService } from "../services/AdSuggestionService";
 import { agentOrchestrator } from "../ai/AgentOrchestrator";
+import { Product } from "../entities/Product";
+import { Connection } from "../entities/Connection";
+import { MercadoLibreAdapter } from "../adapters/MercadoLibreAdapter";
+import { IProduct } from "../interfaces/IMarketplace";
 
 const router = Router();
 
@@ -165,7 +169,7 @@ router.post("/suggestions/:id/create-in-ml", async (req: any, res: any) => {
         const originalProduct = await productRepo.findOneBy({ id: suggestion.productId });
 
         if (!originalProduct) {
-            return res.status(404).json({ error: "Orignal product not found" });
+            return res.status(404).json({ error: "Original product not found" });
         }
 
         const connectionRepo = AppDataSource.getRepository(Connection);
@@ -188,16 +192,11 @@ router.post("/suggestions/:id/create-in-ml", async (req: any, res: any) => {
             price: Number(suggestion.suggestedPrice),
             description: suggestion.suggestedDescription || originalProduct.description || "",
             // Ensure distinct SKU or handle logic to link it back
-            // For a variant/suggestion, we might want to append a suffix to SKU
             sku: `${originalProduct.sku}-${suggestion.type}-${Date.now().toString().slice(-4)}`,
             stock: suggestion.stockRequired || 1,
-            // Important: Mapping type
-            listingType: suggestion.type === "premium" ? "gold_special" : "gold_pro", // Classic is usually gold_special (bronze is deprecated) or similar. 
-            // 'gold_special' = Classic, 'gold_pro' = Premium (approximate mapping, need to verify Adapter logic)
-            // Adapter usually handles strict mapping. Let's send a hint.
-            // Actually Adapter mapToMLProduct uses "listing_type_id" directly if passed often, or defaults.
-            // Let's rely on the fact that we are passing an IProduct.
-            // But wait, IProduct uses 'listingType' enum 'classic' | 'premium'
+            images: originalProduct.images || [],
+            listingType: suggestion.type === "premium" ? "premium" : "classic",
+            condition: (originalProduct.condition === "used" ? "used" : "new") as "new" | "used",
         };
 
         if (suggestion.type === "premium") {
