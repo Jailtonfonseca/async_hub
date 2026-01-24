@@ -221,6 +221,10 @@ async function processMLItemUpdate(resource: string, userId: number) {
                     gp.lastSyncedAt = new Date();
                     await productRepo.save(gp);
                     console.log(`[Webhook ML] Synced stock to group member: ${gp.sku}`);
+
+                    // Sync group member to external marketplaces
+                    await syncToWooCommerce(gp);
+                    await syncToMercadoLibre(gp);
                 }
             }
         }
@@ -374,6 +378,10 @@ async function processWCProductUpdate(wcProduct: any) {
                     gp.lastSyncedAt = new Date();
                     await productRepo.save(gp);
                     console.log(`[Webhook WC] Synced stock to group member: ${gp.sku}`);
+
+                    // Sync group member to external marketplaces
+                    await syncToMercadoLibre(gp);
+                    await syncToWooCommerce(gp);
                 }
             }
         }
