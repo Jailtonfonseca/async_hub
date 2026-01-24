@@ -9,6 +9,7 @@ import webhooksRouter from "./routes/webhooks";
 import aiRouter from "./routes/ai";
 import { tokenRefreshService } from "./services/TokenRefreshService";
 import { syncScheduler } from "./services/SyncScheduler";
+import { errorHandler } from "./middlewares/errorHandler";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -89,6 +90,9 @@ app.post("/api/sync/interval", (req: any, res: any) => {
     }
 });
 
+// Global Error Handler
+app.use(errorHandler);
+
 // Start server IMMEDIATELY
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
@@ -119,6 +123,3 @@ const initializeDatabase = async (attempts = 1): Promise<void> => {
 };
 
 initializeDatabase();
-
-
-

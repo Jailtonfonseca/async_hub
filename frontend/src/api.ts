@@ -1,3 +1,6 @@
+import { connectionService } from "./services/api/connectionService";
+import { productService } from "./services/api/productService";
+
 const API_URL = ''; // Uses Vite proxy - requests go to /api/* and /health
 
 export const api = {
@@ -7,126 +10,11 @@ export const api = {
         return res.json();
     },
 
-    // Connections
-    async getConnections() {
-        const res = await fetch(`${API_URL}/api/connections`);
-        return res.json();
-    },
+    // Connections (Refactored)
+    ...connectionService,
 
-    async getConnection(marketplace: string) {
-        const res = await fetch(`${API_URL}/api/connections/${marketplace}`);
-        return res.json();
-    },
-
-    async saveWooCommerceConnection(data: { apiUrl: string; apiKey: string; apiSecret: string }) {
-        const res = await fetch(`${API_URL}/api/connections/woocommerce`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
-        });
-        return res.json();
-    },
-
-    async saveMercadoLibreCredentials(data: { apiKey: string; apiSecret: string }) {
-        const res = await fetch(`${API_URL}/api/connections/mercadolibre`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
-        });
-        return res.json();
-    },
-
-    async getMercadoLibreAuthUrl(redirectUri: string) {
-        const res = await fetch(`${API_URL}/api/connections/mercadolibre/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}`);
-        return res.json();
-    },
-
-    async completeMercadoLibreAuth(code: string, redirectUri: string) {
-        const res = await fetch(`${API_URL}/api/connections/mercadolibre/callback`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, redirect_uri: redirectUri }),
-        });
-        return res.json();
-    },
-
-    async testConnection(marketplace: string) {
-        const res = await fetch(`${API_URL}/api/connections/${marketplace}/test`, { method: 'POST' });
-        return res.json();
-    },
-
-    async deleteConnection(marketplace: string) {
-        const res = await fetch(`${API_URL}/api/connections/${marketplace}`, { method: 'DELETE' });
-        return res.json();
-    },
-
-    // Products
-    async getProducts() {
-        const res = await fetch(`${API_URL}/api/products`);
-        return res.json();
-    },
-
-    async getProduct(id: number) {
-        const res = await fetch(`${API_URL}/api/products/${id}`);
-        return res.json();
-    },
-
-    async createProduct(data: any) {
-        const res = await fetch(`${API_URL}/api/products`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
-        });
-        return res.json();
-    },
-
-    async updateProduct(id: number, data: any) {
-        const res = await fetch(`${API_URL}/api/products/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
-        });
-        return res.json();
-    },
-
-    async deleteProduct(id: number) {
-        const res = await fetch(`${API_URL}/api/products/${id}`, { method: 'DELETE' });
-        return res.json();
-    },
-
-    async importProducts(marketplace: string) {
-        const res = await fetch(`${API_URL}/api/products/import/${marketplace}`, { method: 'POST' });
-        return res.json();
-    },
-
-    async syncProduct(id: number, marketplace: string) {
-        const res = await fetch(`${API_URL}/api/products/${id}/sync/${marketplace}`, { method: 'POST' });
-        return res.json();
-    },
-
-    // Product Groups
-    async getProductGroups() {
-        const res = await fetch(`${API_URL}/api/products/groups`);
-        return res.json();
-    },
-
-    async setProductGroup(id: number, groupId: string | null) {
-        const res = await fetch(`${API_URL}/api/products/${id}/group`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ groupId }),
-        });
-        return res.json();
-    },
-
-    async updateGroupStock(groupId: string, stock: number) {
-        const res = await fetch(`${API_URL}/api/products/groups/${groupId}/stock`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ stock }),
-        });
-        return res.json();
-    },
+    // Products (Refactored)
+    ...productService,
 
     // Token Management
     async getTokenStatus(marketplace: string) {
