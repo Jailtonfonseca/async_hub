@@ -3,10 +3,6 @@ import { AppDataSource } from "../data-source";
 import { AdSuggestion } from "../entities/AdSuggestion";
 import { adSuggestionService } from "../services/AdSuggestionService";
 import { agentOrchestrator } from "../ai/AgentOrchestrator";
-import { Product } from "../entities/Product";
-import { Connection } from "../entities/Connection";
-import { MercadoLibreAdapter } from "../adapters/MercadoLibreAdapter";
-import { IProduct } from "../interfaces/IMarketplace";
 
 const router = Router();
 
@@ -164,64 +160,20 @@ router.post("/suggestions/:id/create-in-ml", async (req: any, res: any) => {
             return res.status(400).json({ error: "Suggestion must be approved first" });
         }
 
-        // Create IProduct payload by merging original product with suggestion
-        const productRepo = AppDataSource.getRepository(Product);
-        const originalProduct = await productRepo.findOneBy({ id: suggestion.productId });
-
-        if (!originalProduct) {
-            return res.status(404).json({ error: "Original product not found" });
-        }
-
-        const connectionRepo = AppDataSource.getRepository(Connection);
-        const connection = await connectionRepo.findOneBy({ marketplace: "mercadolibre" });
-
-        if (!connection || !connection.accessToken) {
-            return res.status(400).json({ error: "Mercado Libre is not connected" });
-        }
-
-        // Logic to create in ML
-        const adapter = new MercadoLibreAdapter({
-            accessToken: connection.accessToken,
-            userId: connection.userId || ""
-        });
-
-        // Construct payload
-        const payload: IProduct = {
-            ...originalProduct,
-            title: suggestion.suggestedTitle,
-            price: Number(suggestion.suggestedPrice),
-            description: suggestion.suggestedDescription || originalProduct.description || "",
-            // Ensure distinct SKU or handle logic to link it back
-            sku: `${originalProduct.sku}-${suggestion.type}-${Date.now().toString().slice(-4)}`,
-            stock: suggestion.stockRequired || 1,
-            images: originalProduct.images || [],
-            listingType: suggestion.type === "premium" ? "premium" : "classic",
-            condition: (originalProduct.condition === "used" ? "used" : "new") as "new" | "used",
-        };
-
-        if (suggestion.type === "premium") {
-            payload.listingType = "premium";
-        } else {
-            payload.listingType = "classic";
-        }
-
-        const createdProduct = await adapter.createProduct(payload);
-
-        // Update suggestion status
+        // TODO: Call MercadoLibreAdapter.createProduct() here
+        // For now, just mark as created
         suggestion.status = "created";
         suggestion.createdInMlAt = new Date();
-        suggestion.mlListingId = createdProduct.externalId;
+        // suggestion.mlListingId = result.id;
 
         await repo.save(suggestion);
 
         res.json({
             success: true,
-            message: "Listing created in Mercado Libre",
+            message: "Listing creation queued (implementation pending)",
             suggestion,
-            mlProduct: createdProduct
         });
     } catch (error: any) {
-        console.error("[AI] Create in ML error:", error);
         res.status(500).json({ error: error.message });
     }
 });

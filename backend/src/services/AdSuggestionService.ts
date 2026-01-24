@@ -138,9 +138,6 @@ Analise este produto:
 - Preço: R$ ${product.price}
 
 Identifique 2-3 NICHOS DIFERENTES de compradores e crie títulos otimizados para cada um.
-Além disso, reescreva a descrição usando o framework AIDA (Atenção, Interesse, Desejo, Ação) para aumentar a conversão.
-A descrição deve ser formatada em HTML básico (quebras de linha, negrito).
-
 Cada título deve ter no máximo 60 caracteres.
 Os títulos devem usar palavras-chave diferentes para ranquear em buscas diferentes.
 
@@ -150,7 +147,6 @@ Responda em JSON:
     {
       "niche": "nome do nicho",
       "title": "título otimizado",
-      "optimizedDescription": "descrição completa persuasiva em HTML",
       "reasoning": "por que esse título atrai esse público"
     }
   ]
@@ -160,7 +156,6 @@ Responda em JSON:
             variants: Array<{
                 niche: string;
                 title: string;
-                optimizedDescription: string;
                 reasoning: string;
             }>;
         }
@@ -175,7 +170,7 @@ Responda em JSON:
             const suggestion = new AdSuggestion();
             suggestion.type = "seo_variant";
             suggestion.suggestedTitle = v.title.substring(0, 60);
-            suggestion.suggestedDescription = v.optimizedDescription || product.description;
+            suggestion.suggestedDescription = product.description;
             suggestion.suggestedPrice = Number(product.price);
             suggestion.stockRequired = 1;
             suggestion.targetNiche = v.niche;
