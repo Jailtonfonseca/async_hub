@@ -291,6 +291,21 @@ async function processMLOrderUpdate(resource: string, userId: number) {
         if (!localProduct) {
             // In a real scenario we might need to fetch the item details to get the SKU
             // But let's assume we have it or start with ID search
+            try {
+                const mlProduct = await adapter.getProduct(itemId);
+                if (mlProduct && mlProduct.sku) {
+                    // Try finding by SKU
+                    localProduct = await productRepo.findOne({ where: { sku: mlProduct.sku } });
+
+                    if (localProduct) {
+                        console.log(`[Webhook ML] Found product by SKU: ${mlProduct.sku}. Linking ID...`);
+                        localProduct.mercadoLibreId = itemId;
+                        await productRepo.save(localProduct);
+                    }
+                }
+            } catch (err) {
+                console.error(`[Webhook ML] Failed to fetch item for SKU lookup:`, err);
+            }
         }
 
         if (localProduct) {

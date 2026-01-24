@@ -41,7 +41,15 @@ export class MercadoLibreAdapter implements IMarketplace {
             params: { ids: idsParam },
         });
 
-        return itemsResponse.data.map((item: any) => this.mapToProduct(item.body));
+        return itemsResponse.data
+            .filter((item: any) => {
+                if (item.code !== 200) {
+                    console.warn(`[ML Adapter] Failed to fetch item details: ${item.code}`);
+                    return false;
+                }
+                return true;
+            })
+            .map((item: any) => this.mapToProduct(item.body));
     }
 
     async getProduct(externalId: string): Promise<IProduct | null> {
