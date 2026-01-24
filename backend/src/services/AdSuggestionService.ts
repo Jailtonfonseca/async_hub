@@ -138,6 +138,9 @@ Analise este produto:
 - Preço: R$ ${product.price}
 
 Identifique 2-3 NICHOS DIFERENTES de compradores e crie títulos otimizados para cada um.
+Além disso, reescreva a descrição usando o framework AIDA (Atenção, Interesse, Desejo, Ação) para aumentar a conversão.
+A descrição deve ser formatada em HTML básico (quebras de linha, negrito).
+
 Cada título deve ter no máximo 60 caracteres.
 Os títulos devem usar palavras-chave diferentes para ranquear em buscas diferentes.
 
@@ -147,6 +150,7 @@ Responda em JSON:
     {
       "niche": "nome do nicho",
       "title": "título otimizado",
+      "optimizedDescription": "descrição completa persuasiva em HTML",
       "reasoning": "por que esse título atrai esse público"
     }
   ]
@@ -155,89 +159,92 @@ Responda em JSON:
         interface SEOResponse {
             variants: Array<{
                 niche: string;
+                niche: string;
                 title: string;
+                optimizedDescription: string;
                 reasoning: string;
             }>;
-        }
+        }>;
+    }
 
-        const result = await agentOrchestrator.generateJSON<SEOResponse>(prompt);
+    const result = await agentOrchestrator.generateJSON<SEOResponse>(prompt);
 
-        if (!result.variants || !Array.isArray(result.variants)) {
-            return [];
-        }
+    if(!result.variants || !Array.isArray(result.variants)) {
+    return [];
+}
 
-        return result.variants.map((v, index) => {
-            const suggestion = new AdSuggestion();
-            suggestion.type = "seo_variant";
-            suggestion.suggestedTitle = v.title.substring(0, 60);
-            suggestion.suggestedDescription = product.description;
-            suggestion.suggestedPrice = Number(product.price);
-            suggestion.stockRequired = 1;
-            suggestion.targetNiche = v.niche;
-            suggestion.reasoning = `SEO para nicho "${v.niche}": ${v.reasoning}`;
-            suggestion.generatedBy = agentOrchestrator.getStatus().configuredProviders[0] || "ai";
-            suggestion.status = "pending";
-            return suggestion;
-        });
+return result.variants.map((v, index) => {
+    const suggestion = new AdSuggestion();
+    suggestion.type = "seo_variant";
+    suggestion.suggestedTitle = v.title.substring(0, 60);
+    suggestion.suggestedDescription = v.optimizedDescription || product.description;
+    suggestion.suggestedPrice = Number(product.price);
+    suggestion.stockRequired = 1;
+    suggestion.targetNiche = v.niche;
+    suggestion.reasoning = `SEO para nicho "${v.niche}": ${v.reasoning}`;
+    suggestion.generatedBy = agentOrchestrator.getStatus().configuredProviders[0] || "ai";
+    suggestion.status = "pending";
+    return suggestion;
+});
     }
 
     /**
      * Approve a suggestion
      */
-    async approveSuggestion(suggestionId: number): Promise<AdSuggestion> {
-        const repo = AppDataSource.getRepository(AdSuggestion);
-        const suggestion = await repo.findOneBy({ id: suggestionId });
+    async approveSuggestion(suggestionId: number): Promise < AdSuggestion > {
+    const repo = AppDataSource.getRepository(AdSuggestion);
+    const suggestion = await repo.findOneBy({ id: suggestionId });
 
-        if (!suggestion) {
-            throw new Error("Suggestion not found");
-        }
+    if(!suggestion) {
+        throw new Error("Suggestion not found");
+    }
 
         suggestion.status = "approved";
-        suggestion.approvedAt = new Date();
-        await repo.save(suggestion);
+    suggestion.approvedAt = new Date();
+    await repo.save(suggestion);
 
-        return suggestion;
-    }
+    return suggestion;
+}
 
     /**
      * Reject a suggestion
      */
-    async rejectSuggestion(suggestionId: number): Promise<AdSuggestion> {
-        const repo = AppDataSource.getRepository(AdSuggestion);
-        const suggestion = await repo.findOneBy({ id: suggestionId });
+    async rejectSuggestion(suggestionId: number): Promise < AdSuggestion > {
+    const repo = AppDataSource.getRepository(AdSuggestion);
+    const suggestion = await repo.findOneBy({ id: suggestionId });
 
-        if (!suggestion) {
-            throw new Error("Suggestion not found");
-        }
+    if(!suggestion) {
+        throw new Error("Suggestion not found");
+    }
 
         suggestion.status = "rejected";
-        await repo.save(suggestion);
+    await repo.save(suggestion);
 
-        return suggestion;
-    }
+    return suggestion;
+}
 
     /**
      * Get pending suggestions
      */
-    async getPendingSuggestions(): Promise<AdSuggestion[]> {
-        const repo = AppDataSource.getRepository(AdSuggestion);
-        return repo.find({
-            where: { status: "pending" as AdSuggestionStatus },
-            relations: ["product"],
-            order: { createdAt: "DESC" },
-        });
-    }
+    async getPendingSuggestions(): Promise < AdSuggestion[] > {
+    const repo = AppDataSource.getRepository(AdSuggestion);
+    return repo.find({
+        where: { status: "pending" as AdSuggestionStatus },
+        relations: ["product"],
+        order: { createdAt: "DESC" },
+    });
+}
 
     /**
      * Get suggestions by product
      */
-    async getSuggestionsByProduct(productId: number): Promise<AdSuggestion[]> {
-        const repo = AppDataSource.getRepository(AdSuggestion);
-        return repo.find({
-            where: { productId },
-            order: { createdAt: "DESC" },
-        });
-    }
+    async getSuggestionsByProduct(productId: number): Promise < AdSuggestion[] > {
+    const repo = AppDataSource.getRepository(AdSuggestion);
+    return repo.find({
+        where: { productId },
+        order: { createdAt: "DESC" },
+    });
+}
 }
 
 export const adSuggestionService = new AdSuggestionService();

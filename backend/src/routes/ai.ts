@@ -160,20 +160,69 @@ router.post("/suggestions/:id/create-in-ml", async (req: any, res: any) => {
             return res.status(400).json({ error: "Suggestion must be approved first" });
         }
 
-        // TODO: Call MercadoLibreAdapter.createProduct() here
-        // For now, just mark as created
+        // Create IProduct payload by merging original product with suggestion
+        const productRepo = AppDataSource.getRepository(Product);
+        const originalProduct = await productRepo.findOneBy({ id: suggestion.productId });
+
+        if (!originalProduct) {
+            return res.status(404).json({ error: "Orignal product not found" });
+        }
+
+        const connectionRepo = AppDataSource.getRepository(Connection);
+        const connection = await connectionRepo.findOneBy({ marketplace: "mercadolibre" });
+
+        if (!connection || !connection.accessToken) {
+            return res.status(400).json({ error: "Mercado Libre is not connected" });
+        }
+
+        // Logic to create in ML
+        const adapter = new MercadoLibreAdapter({
+            accessToken: connection.accessToken,
+            userId: connection.userId || ""
+        });
+
+        // Construct payload
+        const payload: IProduct = {
+            ...originalProduct,
+            title: suggestion.suggestedTitle,
+            price: Number(suggestion.suggestedPrice),
+            description: suggestion.suggestedDescription || originalProduct.description || "",
+            // Ensure distinct SKU or handle logic to link it back
+            // For a variant/suggestion, we might want to append a suffix to SKU
+            sku: `${originalProduct.sku}-${suggestion.type}-${Date.now().toString().slice(-4)}`,
+            stock: suggestion.stockRequired || 1,
+            // Important: Mapping type
+            listingType: suggestion.type === "premium" ? "gold_special" : "gold_pro", // Classic is usually gold_special (bronze is deprecated) or similar. 
+            // 'gold_special' = Classic, 'gold_pro' = Premium (approximate mapping, need to verify Adapter logic)
+            // Adapter usually handles strict mapping. Let's send a hint.
+            // Actually Adapter mapToMLProduct uses "listing_type_id" directly if passed often, or defaults.
+            // Let's rely on the fact that we are passing an IProduct.
+            // But wait, IProduct uses 'listingType' enum 'classic' | 'premium'
+        };
+
+        if (suggestion.type === "premium") {
+            payload.listingType = "premium";
+        } else {
+            payload.listingType = "classic";
+        }
+
+        const createdProduct = await adapter.createProduct(payload);
+
+        // Update suggestion status
         suggestion.status = "created";
         suggestion.createdInMlAt = new Date();
-        // suggestion.mlListingId = result.id;
+        suggestion.mlListingId = createdProduct.externalId;
 
         await repo.save(suggestion);
 
         res.json({
             success: true,
-            message: "Listing creation queued (implementation pending)",
+            message: "Listing created in Mercado Libre",
             suggestion,
+            mlProduct: createdProduct
         });
     } catch (error: any) {
+        console.error("[AI] Create in ML error:", error);
         res.status(500).json({ error: error.message });
     }
 });
