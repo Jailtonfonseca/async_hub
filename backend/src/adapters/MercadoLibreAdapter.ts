@@ -117,6 +117,15 @@ export class MercadoLibreAdapter implements IMarketplace {
         }
     }
 
+    async getOrder(orderId: string): Promise<any> {
+        try {
+            const response = await this.client.get(`/orders/${orderId}`);
+            return response.data;
+        } catch {
+            return null;
+        }
+    }
+
     private mapToProduct(mlItem: any): IProduct {
         // Get listing type to identify Classic vs Premium
         const listingType = mlItem.listing_type_id || "";
