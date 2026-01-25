@@ -94,6 +94,21 @@ export default function Products() {
 
     const displayItems = getDisplayItems();
 
+    // Calculate totals
+    const totals = products.reduce((acc, p) => {
+        const sellPrice = p.salePrice ? Number(p.salePrice) : Number(p.price);
+        const unitProfit = p.costPrice ? sellPrice - Number(p.costPrice) : 0;
+        const stockValue = p.costPrice ? Number(p.costPrice) * p.stock : 0;
+        const stockProfit = p.costPrice ? unitProfit * p.stock : 0;
+
+        return {
+            count: acc.count + 1,
+            stock: acc.stock + p.stock,
+            stockValue: acc.stockValue + stockValue,
+            stockProfit: acc.stockProfit + stockProfit
+        };
+    }, { count: 0, stock: 0, stockValue: 0, stockProfit: 0 });
+
     const loadProducts = async () => {
         setLoading(true);
         try {
@@ -486,6 +501,28 @@ export default function Products() {
                                 }
                             })}
                         </tbody>
+                        <tfoot className="bg-gray-700 border-t-2 border-gray-600">
+                            <tr>
+                                <td colSpan={2} className="px-4 py-3 text-left font-bold text-white">
+                                    TOTAIS
+                                </td>
+                                <td className="px-4 py-3 text-left font-bold text-blue-300">
+                                    {totals.count} produto{totals.count !== 1 ? 's' : ''}
+                                </td>
+                                <td colSpan={2} className="px-4 py-3"></td>
+                                <td className="px-4 py-3 text-right font-bold text-white">
+                                    {totals.stock}
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-blue-400">
+                                    R$ {totals.stockValue.toFixed(2)}
+                                </td>
+                                <td className="px-4 py-3 text-right"></td>
+                                <td className={`px-4 py-3 text-right font-bold ${totals.stockProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    R$ {totals.stockProfit.toFixed(2)}
+                                </td>
+                                <td colSpan={3} className="px-4 py-3"></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
             )}

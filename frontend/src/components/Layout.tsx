@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 interface LayoutProps {
@@ -8,6 +8,14 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
     const location = useLocation();
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [desktopCollapsed, setDesktopCollapsed] = useState(() => {
+        const saved = localStorage.getItem('sidebarCollapsed');
+        return saved === 'true';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('sidebarCollapsed', String(desktopCollapsed));
+    }, [desktopCollapsed]);
 
     const navItems = [
         { path: '/', label: 'Dashboard', icon: '🏠' },
@@ -48,18 +56,36 @@ export default function Layout({ children }: LayoutProps) {
             <aside
                 className={`
                     fixed lg:static inset-y-0 left-0 z-50
-                    w-64 bg-gray-800 border-r border-gray-700 p-4
-                    transform transition-transform duration-300 ease-in-out
+                    ${desktopCollapsed ? 'lg:w-16' : 'lg:w-64'} w-64
+                    bg-gray-800 border-r border-gray-700 p-4
+                    transform transition-all duration-300 ease-in-out
                     ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
                     lg:translate-x-0 lg:block
                 `}
             >
                 {/* Logo - Hidden on mobile (already in header) */}
                 <div className="hidden lg:block mb-8">
-                    <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-600">
-                        ASync Hub
-                    </h1>
-                    <p className="text-xs text-gray-500 mt-1">Multi-Marketplace Integration</p>
+                    {desktopCollapsed ? (
+                        <h1 className="text-2xl font-bold text-center">🔄</h1>
+                    ) : (
+                        <>
+                            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-600">
+                                ASync Hub
+                            </h1>
+                            <p className="text-xs text-gray-500 mt-1">Multi-Marketplace Integration</p>
+                        </>
+                    )}
+                </div>
+
+                {/* Desktop collapse button */}
+                <div className="hidden lg:block mb-4">
+                    <button
+                        onClick={() => setDesktopCollapsed(!desktopCollapsed)}
+                        className="w-full p-2 rounded-lg bg-gray-700 hover:bg-gray-600 transition text-center"
+                        title={desktopCollapsed ? 'Expandir menu' : 'Recolher menu'}
+                    >
+                        {desktopCollapsed ? '▶' : '◀'}
+                    </button>
                 </div>
 
                 {/* Mobile close button inside sidebar */}
@@ -78,13 +104,14 @@ export default function Layout({ children }: LayoutProps) {
                             key={item.path}
                             to={item.path}
                             onClick={closeSidebar}
-                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${location.pathname === item.path
+                            className={`flex items-center ${desktopCollapsed ? 'lg:justify-center' : 'gap-3'} gap-3 px-4 py-3 rounded-lg transition ${location.pathname === item.path
                                 ? 'bg-blue-600 text-white'
                                 : 'text-gray-400 hover:bg-gray-700 hover:text-white'
                                 }`}
+                            title={desktopCollapsed ? item.label : undefined}
                         >
                             <span>{item.icon}</span>
-                            <span>{item.label}</span>
+                            {!desktopCollapsed && <span className="lg:inline">{item.label}</span>}
                         </Link>
                     ))}
                 </nav>
