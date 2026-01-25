@@ -15,7 +15,7 @@ export const AppDataSource = new DataSource({
     username: process.env.DB_USER || "root",
     password: process.env.DB_PASS || "password",
     database: process.env.DB_NAME || "test",
-    synchronize: process.env.NODE_ENV !== 'production', // Only auto-sync in development
+    synchronize: true, // Use carefully in production
     logging: false,
     entities: [Product, Connection, AdSuggestion, AISettings],
     migrations: [],

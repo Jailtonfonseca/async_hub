@@ -174,7 +174,7 @@ async function processMLItemUpdate(resource: string, userId: number) {
 
     const connection = await connectionRepo.findOneBy({ marketplace: "mercadolibre" });
     if (!connection || !connection.accessToken) {
-        console.error("[Webhook ML] No valid ML connection for item update", { itemId });
+        console.log("[Webhook ML] No valid ML connection");
         return;
     }
 
@@ -185,7 +185,7 @@ async function processMLItemUpdate(resource: string, userId: number) {
 
     const mlProduct = await adapter.getProduct(itemId);
     if (!mlProduct) {
-        console.error("[Webhook ML] Product not found on ML", { itemId });
+        console.log(`[Webhook ML] Product ${itemId} not found`);
         return;
     }
 
@@ -221,10 +221,6 @@ async function processMLItemUpdate(resource: string, userId: number) {
                     gp.lastSyncedAt = new Date();
                     await productRepo.save(gp);
                     console.log(`[Webhook ML] Synced stock to group member: ${gp.sku}`);
-
-                    // Sync group member to external marketplaces
-                    await syncToWooCommerce(gp);
-                    await syncToMercadoLibre(gp);
                 }
             }
         }
@@ -269,7 +265,7 @@ async function processMLOrderUpdate(resource: string, userId: number) {
 
     const order = await adapter.getOrder(orderId);
     if (!order) {
-        console.error("[Webhook ML] Order not found on ML", { orderId });
+        console.log(`[Webhook ML] Order ${orderId} not found`);
         return;
     }
 
@@ -291,21 +287,6 @@ async function processMLOrderUpdate(resource: string, userId: number) {
         if (!localProduct) {
             // In a real scenario we might need to fetch the item details to get the SKU
             // But let's assume we have it or start with ID search
-            try {
-                const mlProduct = await adapter.getProduct(itemId);
-                if (mlProduct && mlProduct.sku) {
-                    // Try finding by SKU
-                    localProduct = await productRepo.findOne({ where: { sku: mlProduct.sku } });
-
-                    if (localProduct) {
-                        console.log(`[Webhook ML] Found product by SKU: ${mlProduct.sku}. Linking ID...`);
-                        localProduct.mercadoLibreId = itemId;
-                        await productRepo.save(localProduct);
-                    }
-                }
-            } catch (err) {
-                console.error(`[Webhook ML] Failed to fetch item for SKU lookup:`, err);
-            }
         }
 
         if (localProduct) {
@@ -344,7 +325,7 @@ async function processMLOrderUpdate(resource: string, userId: number) {
                 }
             }
         } else {
-            console.error("[Webhook ML] Product not found locally for order item", { itemId, orderId });
+            console.log(`[Webhook ML] Product ${itemId} not found locally. Skipping stock update.`);
         }
     }
 }
@@ -393,10 +374,6 @@ async function processWCProductUpdate(wcProduct: any) {
                     gp.lastSyncedAt = new Date();
                     await productRepo.save(gp);
                     console.log(`[Webhook WC] Synced stock to group member: ${gp.sku}`);
-
-                    // Sync group member to external marketplaces
-                    await syncToMercadoLibre(gp);
-                    await syncToWooCommerce(gp);
                 }
             }
         }
