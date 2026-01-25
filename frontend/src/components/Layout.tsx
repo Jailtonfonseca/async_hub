@@ -56,7 +56,7 @@ export default function Layout({ children }: LayoutProps) {
             <aside
                 className={`
                     fixed lg:static inset-y-0 left-0 z-50
-                    ${desktopCollapsed ? 'lg:w-16' : 'lg:w-64'} w-64
+                    w-64 ${desktopCollapsed ? 'lg:w-16' : 'lg:w-64'}
                     bg-gray-800 border-r border-gray-700 p-4
                     transform transition-all duration-300 ease-in-out
                     ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
