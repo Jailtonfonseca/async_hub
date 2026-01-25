@@ -260,6 +260,35 @@ export default function Products() {
                     <span className="text-gray-500">-</span>
                 )}
             </td>
+            <td className="px-4 py-3 text-right">
+                {product.costPrice ? (() => {
+                    const sellPrice = product.salePrice ? Number(product.salePrice) : Number(product.price);
+                    const unitProfit = sellPrice - Number(product.costPrice);
+                    const profitColor = unitProfit >= 0 ? 'text-green-400' : 'text-red-400';
+                    return (
+                        <span className={`${profitColor} font-medium`}>
+                            R$ {unitProfit.toFixed(2)}
+                        </span>
+                    );
+                })() : (
+                    <span className="text-gray-500">-</span>
+                )}
+            </td>
+            <td className="px-4 py-3 text-right">
+                {product.costPrice ? (() => {
+                    const sellPrice = product.salePrice ? Number(product.salePrice) : Number(product.price);
+                    const unitProfit = sellPrice - Number(product.costPrice);
+                    const stockProfit = unitProfit * product.stock;
+                    const profitColor = stockProfit >= 0 ? 'text-green-400' : 'text-red-400';
+                    return (
+                        <span className={`${profitColor} font-bold`}>
+                            R$ {stockProfit.toFixed(2)}
+                        </span>
+                    );
+                })() : (
+                    <span className="text-gray-500">-</span>
+                )}
+            </td>
             <td className="px-4 py-3 text-center">
                 {product.woocommerceId ? (
                     <span className="text-green-400" title={product.woocommerceId}>✓</span>
@@ -390,6 +419,8 @@ export default function Products() {
                                 <th className="px-4 py-3 text-right">Custo</th>
                                 <th className="px-4 py-3 text-right">Estoque</th>
                                 <th className="px-4 py-3 text-right">Valor Estoque</th>
+                                <th className="px-4 py-3 text-right">Lucro Unit.</th>
+                                <th className="px-4 py-3 text-right">Lucro Estoque</th>
                                 <th className="px-4 py-3 text-center">WC</th>
                                 <th className="px-4 py-3 text-center">ML</th>
                                 <th className="px-4 py-3 text-center">Ações</th>
@@ -434,6 +465,12 @@ export default function Products() {
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold text-blue-400">
                                                     {rep.costPrice ? `R$ ${(Number(rep.costPrice) * rep.stock).toFixed(2)}` : '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-400">
+                                                    Varia
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-gray-400">
+                                                    Varia
                                                 </td>
                                                 <td className="px-4 py-3 text-center" colSpan={3}>
                                                     <span className="text-xs text-gray-500">Clique para expandir</span>
