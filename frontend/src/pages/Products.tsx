@@ -94,20 +94,28 @@ export default function Products() {
 
     const displayItems = getDisplayItems();
 
-    // Calculate totals
+    // Calculate totals - count unique products (by groupId or SKU) and sum financials
     const totals = products.reduce((acc, p) => {
+        const productKey = p.groupId || p.sku; // Use groupId to identify unique physical products
+        const isFirstInGroup = !acc.seenGroups.has(productKey);
+
+        if (isFirstInGroup) {
+            acc.seenGroups.add(productKey);
+        }
+
         const sellPrice = p.salePrice ? Number(p.salePrice) : Number(p.price);
         const unitProfit = p.costPrice ? sellPrice - Number(p.costPrice) : 0;
         const stockValue = p.costPrice ? Number(p.costPrice) * p.stock : 0;
         const stockProfit = p.costPrice ? unitProfit * p.stock : 0;
 
         return {
-            count: acc.count + 1,
-            stock: acc.stock + p.stock,
-            stockValue: acc.stockValue + stockValue,
-            stockProfit: acc.stockProfit + stockProfit
+            count: isFirstInGroup ? acc.count + 1 : acc.count, // Only count once per group
+            stock: isFirstInGroup ? acc.stock + p.stock : acc.stock, // Only add stock once per group
+            stockValue: isFirstInGroup ? acc.stockValue + stockValue : acc.stockValue,
+            stockProfit: isFirstInGroup ? acc.stockProfit + stockProfit : acc.stockProfit, // Only add profit once per group
+            seenGroups: acc.seenGroups
         };
-    }, { count: 0, stock: 0, stockValue: 0, stockProfit: 0 });
+    }, { count: 0, stock: 0, stockValue: 0, stockProfit: 0, seenGroups: new Set<string>() });
 
     const loadProducts = async () => {
         setLoading(true);
