@@ -4,6 +4,13 @@ import { api } from '../api';
 export default function Settings() {
     const [woo, setWoo] = useState({ apiUrl: '', apiKey: '', apiSecret: '' });
     const [ml, setMl] = useState({ apiKey: '', apiSecret: '' });
+    const [amazon, setAmazon] = useState({
+        apiKey: '',
+        apiSecret: '',
+        awsAccessKey: '',
+        awsSecretKey: '',
+        awsRegion: 'us-east-1'
+    });
     const [connections, setConnections] = useState<any[]>([]);
     const [saving, setSaving] = useState<string | null>(null);
 
@@ -43,6 +50,28 @@ export default function Settings() {
         try {
             const redirectUri = window.location.origin + '/callback/mercadolibre';
             const result = await api.getMercadoLibreAuthUrl(redirectUri);
+            window.location.href = result.authUrl;
+        } catch (e: any) {
+            alert('Erro: ' + e.message);
+        }
+    };
+
+    const handleSaveAmazon = async () => {
+        setSaving('amazon');
+        try {
+            await api.saveAmazonCredentials(amazon);
+            alert('Credenciais salvas! Clique em "Autorizar" para conectar.');
+            api.getConnections().then(setConnections);
+        } catch (e: any) {
+            alert('Erro: ' + e.message);
+        }
+        setSaving(null);
+    };
+
+    const handleAuthAmazon = async () => {
+        try {
+            const redirectUri = window.location.origin + '/callback/amazon';
+            const result = await api.getAmazonAuthUrl(redirectUri);
             window.location.href = result.authUrl;
         } catch (e: any) {
             alert('Erro: ' + e.message);
@@ -290,6 +319,143 @@ export default function Settings() {
                         {isConnected('mercadolibre') && (
                             <button
                                 onClick={() => handleDisconnect('mercadolibre')}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded"
+                            >
+                                Desconectar
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Amazon */}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 mt-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-semibold">Amazon</h2>
+                    {isConnected('amazon') && (
+                        <span className="px-3 py-1 bg-green-900 text-green-300 rounded text-sm">Conectado</span>
+                    )}
+                </div>
+
+                <div className="bg-orange-900/30 border border-orange-700 rounded p-4 mb-4">
+                    <h3 className="font-semibold text-orange-300 mb-2">📘 Como Configurar na Amazon</h3>
+                    <ol className="text-sm text-orange-200 space-y-2 list-decimal list-inside">
+                        <li>
+                            Acesse o{' '}
+                            <a
+                                href="https://sellercentral.amazon.com.br/apps/manage"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline font-medium"
+                            >
+                                Seller Central → Apps & Services → Develop Apps
+                            </a>
+                        </li>
+                        <li>Clique em <strong>"Add new app client"</strong></li>
+                        <li>
+                            <strong>App name:</strong> Async Hub
+                        </li>
+                        <li>
+                            <strong>OAuth Redirect URI:</strong><br />
+                            <code className="bg-gray-800 px-2 py-1 rounded text-xs block mt-1">
+                                {window.location.origin}/callback/amazon
+                            </code>
+                            <span className="text-xs text-gray-400">(Copie exatamente este URL)</span>
+                        </li>
+                        <li>Após criar, copie o <strong>LWA Client ID</strong> e <strong>LWA Client Secret</strong></li>
+                    </ol>
+
+                    <div className="mt-4 p-3 bg-blue-900/30 border border-blue-700 rounded">
+                        <h4 className="font-semibold text-blue-300 mb-2">🔑 Credenciais AWS</h4>
+                        <p className="text-sm text-blue-200 mb-2">
+                            Você também precisa criar um usuário IAM na AWS:
+                        </p>
+                        <ol className="text-xs text-blue-200 space-y-1 list-decimal list-inside">
+                            <li>Acesse AWS Console → IAM → Users</li>
+                            <li>Crie um usuário com acesso programático</li>
+                            <li>Anexe a política que permite execução SP-API</li>
+                            <li>Salve o <strong>Access Key ID</strong> e <strong>Secret Access Key</strong></li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">LWA Client ID</label>
+                            <input
+                                type="text"
+                                placeholder="amzn1.application-oa2-client..."
+                                value={amazon.apiKey}
+                                onChange={e => setAmazon({ ...amazon, apiKey: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">LWA Client Secret</label>
+                            <input
+                                type="password"
+                                placeholder="..."
+                                value={amazon.apiSecret}
+                                onChange={e => setAmazon({ ...amazon, apiSecret: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 outline-none"
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">AWS Access Key ID</label>
+                            <input
+                                type="text"
+                                placeholder="AKIA..."
+                                value={amazon.awsAccessKey}
+                                onChange={e => setAmazon({ ...amazon, awsAccessKey: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">AWS Secret Access Key</label>
+                            <input
+                                type="password"
+                                placeholder="..."
+                                value={amazon.awsSecretKey}
+                                onChange={e => setAmazon({ ...amazon, awsSecretKey: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">AWS Region</label>
+                            <select
+                                value={amazon.awsRegion}
+                                onChange={e => setAmazon({ ...amazon, awsRegion: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 outline-none"
+                            >
+                                <option value="us-east-1">US East (N. Virginia)</option>
+                                <option value="us-west-2">US West (Oregon)</option>
+                                <option value="eu-west-1">Europe (Ireland)</option>
+                                <option value="eu-central-1">Europe (Frankfurt)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleSaveAmazon}
+                            disabled={saving === 'amazon'}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50"
+                        >
+                            {saving === 'amazon' ? 'Salvando...' : 'Salvar Credenciais'}
+                        </button>
+                        {connections.find(c => c.marketplace === 'amazon') && !isConnected('amazon') && (
+                            <button
+                                onClick={handleAuthAmazon}
+                                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded"
+                            >
+                                Autorizar na Amazon
+                            </button>
+                        )}
+                        {isConnected('amazon') && (
+                            <button
+                                onClick={() => handleDisconnect('amazon')}
                                 className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded"
                             >
                                 Desconectar
