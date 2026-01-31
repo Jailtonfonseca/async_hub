@@ -63,6 +63,9 @@ export class Product {
     @Column({ nullable: true })
     mercadoLibreId?: string;
 
+    @Column({ nullable: true })
+    amazonId?: string;
+
     @CreateDateColumn()
     createdAt!: Date;
 

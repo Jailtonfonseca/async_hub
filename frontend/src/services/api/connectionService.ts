@@ -48,8 +48,34 @@ export const connectionService = {
         return res.json();
     },
 
+
     async deleteConnection(marketplace: string) {
         const res = await fetch(`${API_URL}/api/connections/${marketplace}`, { method: 'DELETE' });
         return res.json();
     },
+
+    async saveAmazonCredentials(data: { apiKey: string; apiSecret: string; awsAccessKey: string; awsSecretKey: string; awsRegion: string }) {
+        const res = await fetch(`${API_URL}/api/connections/amazon`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return res.json();
+    },
+
+    async getAmazonAuthUrl(redirectUri: string, state?: string) {
+        const url = `${API_URL}/api/connections/amazon/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}${state ? '&state=' + encodeURIComponent(state) : ''}`;
+        const res = await fetch(url);
+        return res.json();
+    },
+
+    async completeAmazonAuth(code: string, redirectUri: string) {
+        const res = await fetch(`${API_URL}/api/connections/amazon/callback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, redirect_uri: redirectUri }),
+        });
+        return res.json();
+    },
 };
+

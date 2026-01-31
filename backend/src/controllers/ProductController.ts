@@ -4,6 +4,7 @@ import { Product } from "../entities/Product";
 import { Connection } from "../entities/Connection";
 import { WooCommerceAdapter } from "../adapters/WooCommerceAdapter";
 import { MercadoLibreAdapter } from "../adapters/MercadoLibreAdapter";
+import { AmazonAdapter } from "../adapters/AmazonAdapter";
 
 export class ProductController {
     private productRepo = AppDataSource.getRepository(Product);
@@ -410,7 +411,7 @@ export class ProductController {
 
     // Helper method to sync a single product to all its connected marketplaces
     private async syncToMarketplaces(product: Product, changes: { priceChanged?: boolean; salePriceChanged?: boolean; stockChanged?: boolean }) {
-        const syncResults: any = { woocommerce: null, mercadolibre: null };
+        const syncResults: any = { woocommerce: null, mercadolibre: null, amazon: null };
         const { priceChanged, salePriceChanged, stockChanged } = changes;
 
         // Sync to WooCommerce
@@ -463,6 +464,36 @@ export class ProductController {
             } catch (e: any) {
                 syncResults.mercadolibre = `error: ${e.message}`;
                 console.error(`[ProductSync] ML sync error: ${e.message}`);
+            }
+        }
+
+        // Sync to Amazon
+        if (product.amazonId) {
+            try {
+                const amazonConnection = await this.connectionRepo.findOneBy({ marketplace: "amazon" });
+                if (amazonConnection && amazonConnection.isConnected) {
+                    const amazonAdapter = new AmazonAdapter({
+                        apiKey: amazonConnection.apiKey || "",
+                        apiSecret: amazonConnection.apiSecret || "",
+                        accessToken: amazonConnection.accessToken || "",
+                        userId: amazonConnection.userId || "",
+                        apiUrl: amazonConnection.apiUrl || "",
+                        refreshToken: amazonConnection.refreshToken || "",
+                    });
+
+                    if (stockChanged) {
+                        await amazonAdapter.updateStock(product.amazonId, product.stock);
+                    }
+                    if (priceChanged || salePriceChanged) {
+                        await amazonAdapter.updatePrice(product.amazonId, Number(product.price), product.salePrice ? Number(product.salePrice) : undefined);
+                    }
+
+                    syncResults.amazon = "synced";
+                    console.log(`[ProductSync] Synced to Amazon: ${product.sku}`);
+                }
+            } catch (e: any) {
+                syncResults.amazon = `error: ${e.message}`;
+                console.error(`[ProductSync] Amazon sync error: ${e.message}`);
             }
         }
 

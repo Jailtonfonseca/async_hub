@@ -3,6 +3,7 @@ import { AppDataSource } from "../data-source";
 import { Connection } from "../entities/Connection";
 import { WooCommerceAdapter } from "../adapters/WooCommerceAdapter";
 import { MercadoLibreAdapter } from "../adapters/MercadoLibreAdapter";
+import { AmazonAdapter } from "../adapters/AmazonAdapter";
 
 const router = Router();
 const connectionRepo = () => AppDataSource.getRepository(Connection);
@@ -164,6 +165,16 @@ router.post("/:marketplace/test", async (req: Request, res: Response) => {
                 userId: connection.userId,
             });
             isConnected = await adapter.testConnection();
+        } else if (req.params.marketplace === "amazon") {
+            const adapter = new AmazonAdapter({
+                apiKey: connection.apiKey,
+                apiSecret: connection.apiSecret,
+                accessToken: connection.accessToken,
+                userId: connection.userId,
+                apiUrl: connection.apiUrl,
+                refreshToken: connection.refreshToken,
+            });
+            isConnected = await adapter.testConnection();
         }
 
         connection.isConnected = isConnected;
@@ -172,6 +183,76 @@ router.post("/:marketplace/test", async (req: Request, res: Response) => {
         res.json({ isConnected });
     } catch (error) {
         res.status(500).json({ error: "Test failed" });
+    }
+});
+
+// Create or Update Amazon connection (save credentials)
+router.post("/amazon", async (req: Request, res: Response) => {
+    try {
+        const { apiKey, apiSecret, awsAccessKey, awsSecretKey, awsRegion } = req.body;
+
+        let connection = await connectionRepo().findOneBy({ marketplace: "amazon" });
+        if (!connection) {
+            connection = new Connection();
+            connection.marketplace = "amazon";
+        }
+
+        connection.apiKey = apiKey; // LWA Client ID
+        connection.apiSecret = apiSecret; // LWA Client Secret
+        connection.accessToken = awsAccessKey; // AWS Access Key ID (reusing field)
+        connection.userId = awsSecretKey; // AWS Secret Access Key (reusing field)
+        connection.apiUrl = awsRegion; // AWS Region (reusing field)
+        connection.isConnected = false;
+
+        await connectionRepo().save(connection);
+        res.json({ success: true, message: "Credentials saved. Proceed to OAuth." });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to save connection" });
+    }
+});
+
+// Get Amazon OAuth URL
+router.get("/amazon/auth-url", async (req: Request, res: Response) => {
+    try {
+        const connection = await connectionRepo().findOneBy({ marketplace: "amazon" });
+        if (!connection || !connection.apiKey) {
+            return res.status(400).json({ error: "Amazon LWA Client ID not configured" });
+        }
+
+        const redirectUri = req.query.redirect_uri as string || "http://localhost:3000/callback/amazon";
+        const state = req.query.state as string;
+        const authUrl = AmazonAdapter.getAuthUrl(connection.apiKey, redirectUri, state);
+        res.json({ authUrl });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to generate auth URL" });
+    }
+});
+
+// Amazon OAuth Callback
+router.post("/amazon/callback", async (req: Request, res: Response) => {
+    try {
+        const { code, redirect_uri } = req.body;
+
+        const connection = await connectionRepo().findOneBy({ marketplace: "amazon" });
+        if (!connection || !connection.apiKey || !connection.apiSecret) {
+            return res.status(400).json({ error: "Amazon credentials not configured" });
+        }
+
+        const tokenData = await AmazonAdapter.exchangeCodeForToken(
+            code,
+            connection.apiKey,
+            connection.apiSecret,
+            redirect_uri
+        );
+
+        connection.refreshToken = tokenData.refresh_token;
+        connection.isConnected = true;
+        connection.tokenExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
+
+        await connectionRepo().save(connection);
+        res.json({ success: true, isConnected: true });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "OAuth failed" });
     }
 });
 
