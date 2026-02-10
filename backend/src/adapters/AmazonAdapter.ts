@@ -3,14 +3,14 @@ import { IMarketplace, IProduct, IConnectionCredentials } from "../interfaces/IM
 
 export class AmazonAdapter implements IMarketplace {
     name = "amazon";
-    private client: SellingPartnerAPI;
+    private client: any;
     private credentials: IConnectionCredentials;
 
     constructor(credentials: IConnectionCredentials) {
         this.credentials = credentials;
 
         // Initialize SP-API client
-        this.client = new SellingPartnerAPI({
+        this.client = new (SellingPartnerAPI as any)({
             region: (credentials.apiUrl || "us-east-1") as any, // Using apiUrl to store region
             refresh_token: credentials.refreshToken || "",
             credentials: {

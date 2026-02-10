@@ -48,7 +48,7 @@ export class OpenAIProvider implements ILLMProvider {
         model: string,
         config?: Partial<LLMConfig>
     ): Promise<LLMResponse> {
-        const response = await axios.post(
+        const response: any = await axios.post(
             `${this.baseUrl}/chat/completions`,
             {
                 model,
@@ -88,7 +88,7 @@ export class OpenAIProvider implements ILLMProvider {
             content: m.content,
         }));
 
-        const response = await axios.post(
+        const response: any = await axios.post(
             `${this.baseUrl}/responses`,
             {
                 model,

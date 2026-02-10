@@ -66,6 +66,9 @@ export class Product {
     @Column({ nullable: true })
     amazonId?: string;
 
+    @Column({ nullable: true })
+    sourceMarketplace?: string;
+
     @CreateDateColumn()
     createdAt!: Date;
 

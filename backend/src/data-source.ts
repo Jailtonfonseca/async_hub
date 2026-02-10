@@ -11,11 +11,11 @@ dotenv.config();
 export const AppDataSource = new DataSource({
     type: "mysql",
     host: process.env.DB_HOST || "localhost",
-    port: 3306,
+    port: Number(process.env.DB_PORT || 3306),
     username: process.env.DB_USER || "root",
     password: process.env.DB_PASS || "password",
     database: process.env.DB_NAME || "test",
-    synchronize: true, // Use carefully in production
+    synchronize: process.env.TYPEORM_SYNCHRONIZE === "true",
     logging: false,
     entities: [Product, Connection, AdSuggestion, AISettings],
     migrations: [],

@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import express from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
 
 import { AppDataSource } from "./data-source";
@@ -14,7 +14,16 @@ import { errorHandler } from "./middlewares/errorHandler";
 const app = express();
 const port = process.env.PORT || 4000;
 
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000")
+    .split(",")
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+app.use(cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+}));
 app.use(express.json());
 
 // Track database status
@@ -26,7 +35,7 @@ app.use("/api/products", productsRouter);
 app.use("/api/webhooks", webhooksRouter);
 app.use("/api/ai", aiRouter);
 
-app.get("/health", (req: any, res: any) => {
+app.get("/health", (_req: Request, res: Response) => {
     const syncStatus = syncScheduler.getStatus();
     res.json({
         status: "ok",
@@ -43,34 +52,34 @@ app.get("/health", (req: any, res: any) => {
 });
 
 // Token refresh endpoints
-app.post("/api/tokens/refresh/:marketplace", async (req: any, res: any) => {
+app.post("/api/tokens/refresh/:marketplace", async (req: Request, res: Response) => {
     const { marketplace } = req.params;
     const result = await tokenRefreshService.forceRefresh(marketplace);
     res.json(result);
 });
 
-app.get("/api/tokens/status/:marketplace", async (req: any, res: any) => {
+app.get("/api/tokens/status/:marketplace", async (req: Request, res: Response) => {
     const { marketplace } = req.params;
     const status = await tokenRefreshService.getTokenStatus(marketplace);
     res.json(status);
 });
 
 // Sync scheduler endpoints
-app.get("/api/sync/status", (req: any, res: any) => {
+app.get("/api/sync/status", (_req: Request, res: Response) => {
     res.json(syncScheduler.getStatus());
 });
 
-app.get("/api/sync/history", (req: any, res: any) => {
-    const limit = parseInt(req.query.limit) || 10;
+app.get("/api/sync/history", (req: Request, res: Response) => {
+    const limit = parseInt(String(req.query.limit || "10"), 10) || 10;
     res.json(syncScheduler.getHistory(limit));
 });
 
-app.post("/api/sync/trigger", async (req: any, res: any) => {
+app.post("/api/sync/trigger", async (_req: Request, res: Response) => {
     const results = await syncScheduler.runFullSync();
     res.json({ success: true, results });
 });
 
-app.post("/api/sync/trigger/:marketplace", async (req: any, res: any) => {
+app.post("/api/sync/trigger/:marketplace", async (req: Request, res: Response) => {
     const { marketplace } = req.params;
     const result = await syncScheduler.triggerSync(marketplace);
     if (result) {
@@ -80,9 +89,9 @@ app.post("/api/sync/trigger/:marketplace", async (req: any, res: any) => {
     }
 });
 
-app.post("/api/sync/interval", (req: any, res: any) => {
-    const { minutes } = req.body;
-    if (minutes && minutes >= 1) {
+app.post("/api/sync/interval", (req: Request, res: Response) => {
+    const minutes = Number(req.body?.minutes);
+    if (Number.isFinite(minutes) && minutes >= 1) {
         syncScheduler.setInterval(minutes);
         res.json({ success: true, intervalMinutes: minutes });
     } else {

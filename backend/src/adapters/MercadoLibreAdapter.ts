@@ -1,9 +1,9 @@
-import axios, { AxiosInstance } from "axios";
+import axios from "axios";
 import { IMarketplace, IProduct, IConnectionCredentials } from "../interfaces/IMarketplace";
 
 export class MercadoLibreAdapter implements IMarketplace {
     name = "mercadolibre";
-    private client: AxiosInstance;
+    private client: any;
     private credentials: IConnectionCredentials;
     private userId: string;
 

@@ -17,7 +17,7 @@ export class OpenRouterProvider implements ILLMProvider {
 
     async chat(messages: LLMMessage[], config?: Partial<LLMConfig>): Promise<LLMResponse> {
         try {
-            const response = await axios.post(
+            const response: any = await axios.post(
                 `${this.baseUrl}/chat/completions`,
                 {
                     model: config?.model || this.defaultModel,
