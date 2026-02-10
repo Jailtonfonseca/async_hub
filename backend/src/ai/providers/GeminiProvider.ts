@@ -33,7 +33,7 @@ export class GeminiProvider implements ILLMProvider {
                 contents[0].parts[0].text = `${systemMsg.content}\n\n${contents[0].parts[0].text}`;
             }
 
-            const response = await axios.post(
+            const response: any = await axios.post(
                 `${this.baseUrl}/models/${model}:generateContent?key=${this.apiKey}`,
                 {
                     contents,
