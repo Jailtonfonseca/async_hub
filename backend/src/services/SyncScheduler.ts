@@ -144,64 +144,140 @@ export class SyncScheduler {
     }
 
     /**
-     * Sync products from WooCommerce
+     * Sync products from WooCommerce with pagination support
      */
     private async syncWooCommerce(connection: Connection, result: SyncResult) {
+        if (!connection.apiUrl || !connection.apiKey || !connection.apiSecret) {
+            result.errors.push("Missing WooCommerce credentials");
+            return;
+        }
+
         const adapter = new WooCommerceAdapter({
-            apiUrl: connection.apiUrl || "",
-            apiKey: connection.apiKey || "",
-            apiSecret: connection.apiSecret || ""
+            apiUrl: connection.apiUrl,
+            apiKey: connection.apiKey,
+            apiSecret: connection.apiSecret
         });
 
         const productRepo = AppDataSource.getRepository(Product);
-        const remoteProducts = await adapter.getProducts(100, 0);
+        const batchSize = 50;
+        let offset = 0;
+        let totalImported = 0;
+        let totalUpdated = 0;
 
-        for (const remoteProduct of remoteProducts) {
-            try {
-                // Find existing product by SKU or external ID
-                let localProduct = await productRepo.findOne({
-                    where: [
-                        { sku: remoteProduct.sku },
-                        { woocommerceId: remoteProduct.externalId }
-                    ]
-                });
-
-                if (localProduct) {
-                    // Update existing product
-                    localProduct.title = remoteProduct.title;
-                    localProduct.price = remoteProduct.price;
-                    localProduct.salePrice = remoteProduct.salePrice;
-                    localProduct.stock = remoteProduct.stock;
-                    localProduct.woocommerceId = remoteProduct.externalId;
-                    localProduct.lastSyncedAt = new Date();
-                    await productRepo.save(localProduct);
-                    result.updated++;
-                } else {
-                    // Create new product
-                    const newProduct = productRepo.create({
-                        sku: remoteProduct.sku,
-                        title: remoteProduct.title,
-                        description: remoteProduct.description,
-                        price: remoteProduct.price,
-                        salePrice: remoteProduct.salePrice,
-                        stock: remoteProduct.stock,
-                        images: remoteProduct.images,
-                        woocommerceId: remoteProduct.externalId,
-                        sourceMarketplace: "woocommerce",
-                        lastSyncedAt: new Date()
-                    });
-                    await productRepo.save(newProduct);
-                    result.imported++;
+        try {
+            while (true) {
+                const remoteProducts = await adapter.getProducts(batchSize, offset);
+                
+                if (remoteProducts.length === 0) {
+                    break; // No more products
                 }
-            } catch (error: any) {
-                result.failed++;
-                result.errors.push(`Product ${remoteProduct.sku}: ${error.message}`);
+
+                for (const remoteProduct of remoteProducts) {
+                    try {
+                        // Use transaction for each product to ensure data consistency
+                        await this.syncSingleProduct(productRepo, remoteProduct, "woocommerce", result);
+                    } catch (error: any) {
+                        result.failed++;
+                        result.errors.push(`Product ${remoteProduct.sku}: ${error.message}`);
+                    }
+                }
+
+                offset += batchSize;
+                
+                // Safety limit to prevent infinite loops
+                if (offset > 10000) {
+                    console.warn("[SyncScheduler] Reached maximum WooCommerce pagination limit");
+                    break;
+                }
             }
+
+            console.log(`[SyncScheduler] WooCommerce sync completed: ${result.imported} imported, ${result.updated} updated`);
+        } catch (error: any) {
+            console.error("[SyncScheduler] WooCommerce sync error:", error.message);
+            result.errors.push(error.message);
         }
     }
 
     /**
-     * Sync products from Mercado Libre
+     * Sync a single product from any marketplace
+     */
+    private async syncSingleProduct(
+        productRepo: any,
+        remoteProduct: any,
+        sourceMarketplace: string,
+        result: SyncResult
+    ) {
+        // Find existing product by SKU or external ID
+        const whereConditions: any[] = [{ sku: remoteProduct.sku }];
+        
+        if (sourceMarketplace === "woocommerce") {
+            whereConditions.push({ woocommerceId: remoteProduct.externalId });
+        } else if (sourceMarketplace === "mercadolibre") {
+            whereConditions.push({ mercadoLibreId: remoteProduct.externalId });
+        } else if (sourceMarketplace === "amazon") {
+            whereConditions.push({ amazonId: remoteProduct.externalId });
+        }
+
+        let localProduct = await productRepo.findOne({ where: whereConditions });
+
+        if (localProduct) {
+            // Update existing product - only update changed fields
+            let hasChanges = false;
+            
+            if (localProduct.title !== remoteProduct.title) {
+                localProduct.title = remoteProduct.title;
+                hasChanges = true;
+            }
+            if (localProduct.price !== remoteProduct.price) {
+                localProduct.price = remoteProduct.price;
+                hasChanges = true;
+            }
+            if (localProduct.salePrice !== remoteProduct.salePrice) {
+                localProduct.salePrice = remoteProduct.salePrice;
+                hasChanges = true;
+            }
+            if (localProduct.stock !== remoteProduct.stock) {
+                localProduct.stock = remoteProduct.stock;
+                hasChanges = true;
+            }
+
+            // Update marketplace-specific ID
+            if (sourceMarketplace === "woocommerce") {
+                localProduct.woocommerceId = remoteProduct.externalId;
+            } else if (sourceMarketplace === "mercadolibre") {
+                localProduct.mercadoLibreId = remoteProduct.externalId;
+            } else if (sourceMarketplace === "amazon") {
+                localProduct.amazonId = remoteProduct.externalId;
+            }
+
+            if (hasChanges) {
+                localProduct.lastSyncedAt = new Date();
+                await productRepo.save(localProduct);
+                result.updated++;
+            }
+        } else {
+            // Create new product
+            const newProduct = productRepo.create({
+                sku: remoteProduct.sku || `${sourceMarketplace}_${remoteProduct.externalId}`,
+                title: remoteProduct.title,
+                description: remoteProduct.description || "",
+                price: remoteProduct.price,
+                salePrice: remoteProduct.salePrice,
+                stock: remoteProduct.stock,
+                images: remoteProduct.images || [],
+                woocommerceId: sourceMarketplace === "woocommerce" ? remoteProduct.externalId : null,
+                mercadoLibreId: sourceMarketplace === "mercadolibre" ? remoteProduct.externalId : null,
+                amazonId: sourceMarketplace === "amazon" ? remoteProduct.externalId : null,
+                sourceMarketplace,
+                lastSyncedAt: new Date()
+            });
+            await productRepo.save(newProduct);
+            result.imported++;
+        }
+    }
+
+    /**
+     * Sync products from Mercado Libre with pagination support
      */
     private async syncMercadoLibre(connection: Connection, result: SyncResult) {
         if (!connection.accessToken) {
@@ -215,47 +291,39 @@ export class SyncScheduler {
         });
 
         const productRepo = AppDataSource.getRepository(Product);
-        const remoteProducts = await adapter.getProducts(50, 0);
+        const batchSize = 50;
+        let offset = 0;
 
-        for (const remoteProduct of remoteProducts) {
-            try {
-                // Find existing product by SKU or ML ID
-                let localProduct = await productRepo.findOne({
-                    where: [
-                        { sku: remoteProduct.sku },
-                        { mercadoLibreId: remoteProduct.externalId }
-                    ]
-                });
-
-                if (localProduct) {
-                    // Update existing product
-                    localProduct.title = remoteProduct.title;
-                    localProduct.price = remoteProduct.price;
-                    localProduct.stock = remoteProduct.stock;
-                    localProduct.mercadoLibreId = remoteProduct.externalId;
-                    localProduct.lastSyncedAt = new Date();
-                    await productRepo.save(localProduct);
-                    result.updated++;
-                } else {
-                    // Create new product
-                    const newProduct = productRepo.create({
-                        sku: remoteProduct.sku || remoteProduct.externalId,
-                        title: remoteProduct.title,
-                        description: remoteProduct.description,
-                        price: remoteProduct.price,
-                        stock: remoteProduct.stock,
-                        images: remoteProduct.images,
-                        mercadoLibreId: remoteProduct.externalId,
-                        sourceMarketplace: "mercadolibre",
-                        lastSyncedAt: new Date()
-                    });
-                    await productRepo.save(newProduct);
-                    result.imported++;
+        try {
+            while (true) {
+                const remoteProducts = await adapter.getProducts(batchSize, offset);
+                
+                if (remoteProducts.length === 0) {
+                    break; // No more products
                 }
-            } catch (error: any) {
-                result.failed++;
-                result.errors.push(`Product ${remoteProduct.sku}: ${error.message}`);
+
+                for (const remoteProduct of remoteProducts) {
+                    try {
+                        await this.syncSingleProduct(productRepo, remoteProduct, "mercadolibre", result);
+                    } catch (error: any) {
+                        result.failed++;
+                        result.errors.push(`Product ${remoteProduct.sku}: ${error.message}`);
+                    }
+                }
+
+                offset += batchSize;
+                
+                // Safety limit to prevent infinite loops
+                if (offset > 10000) {
+                    console.warn("[SyncScheduler] Reached maximum Mercado Libre pagination limit");
+                    break;
+                }
             }
+
+            console.log(`[SyncScheduler] Mercado Libre sync completed: ${result.imported} imported, ${result.updated} updated`);
+        } catch (error: any) {
+            console.error("[SyncScheduler] Mercado Libre sync error:", error.message);
+            result.errors.push(error.message);
         }
     }
 

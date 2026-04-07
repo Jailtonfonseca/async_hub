@@ -1,4 +1,5 @@
-import { Router } from "express";
+import { Router, Request, Response } from "express";
+import crypto from "crypto";
 import { AppDataSource } from "../data-source";
 import { Connection } from "../entities/Connection";
 import { Product } from "../entities/Product";
@@ -7,17 +8,58 @@ import { WooCommerceAdapter } from "../adapters/WooCommerceAdapter";
 
 const router = Router();
 
-// Store webhook logs for debugging
+// Store webhook logs for debugging (in production, use database or Redis)
 interface WebhookLog {
     timestamp: Date;
-    source: "mercadolibre" | "woocommerce";
+    source: "mercadolibre" | "woocommerce" | "amazon";
     topic: string;
     resourceId: string;
     processed: boolean;
     error?: string;
+    signature?: string;
 }
 
 const webhookLogs: WebhookLog[] = [];
+
+/**
+ * Verify Mercado Libre webhook signature
+ * ML sends X-ML-Signature header with HMAC-SHA256 signature
+ */
+function verifyMercadoLibreSignature(req: Request, appSecret: string): boolean {
+    const signature = req.headers["x-ml-signature"] as string;
+    if (!signature) return false;
+
+    const body = JSON.stringify(req.body);
+    const expectedSignature = crypto
+        .createHmac("sha256", appSecret)
+        .update(body)
+        .digest("hex");
+
+    return crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+    );
+}
+
+/**
+ * Verify WooCommerce webhook signature
+ * WC sends X-WC-Webhook-Signature header with HMAC-SHA256 signature
+ */
+function verifyWooCommerceSignature(req: Request, secret: string): boolean {
+    const signature = req.headers["x-wc-webhook-signature"] as string;
+    if (!signature) return false;
+
+    const body = JSON.stringify(req.body);
+    const expectedSignature = crypto
+        .createHmac("sha256", secret)
+        .update(body)
+        .digest("base64");
+
+    return crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+    );
+}
 
 /**
  * Mercado Libre Webhook Handler
@@ -25,40 +67,68 @@ const webhookLogs: WebhookLog[] = [];
  * 
  * ML sends: { resource: "/items/MLB123", user_id: 123, topic: "items", ... }
  */
-router.post("/mercadolibre", async (req: any, res: any) => {
-    console.log("[Webhook ML] Received:", JSON.stringify(req.body));
+router.post("/mercadolibre", async (req: Request, res: Response) => {
+    console.log("[Webhook ML] Received:", JSON.stringify(req.body).substring(0, 500));
 
     const log: WebhookLog = {
         timestamp: new Date(),
         source: "mercadolibre",
         topic: req.body.topic || "unknown",
         resourceId: req.body.resource || "",
-        processed: false
+        processed: false,
+        signature: req.headers["x-ml-signature"] as string
     };
 
     try {
         const { topic, resource, user_id } = req.body;
 
+        // Verify signature if app secret is configured
+        const connectionRepo = AppDataSource.getRepository(Connection);
+        const mlConnection = await connectionRepo.findOneBy({ marketplace: "mercadolibre" });
+        
+        if (mlConnection?.apiSecret) {
+            const isValid = verifyMercadoLibreSignature(req, mlConnection.apiSecret);
+            if (!isValid) {
+                console.warn("[Webhook ML] Invalid signature");
+                log.error = "Invalid signature";
+                webhookLogs.push(log);
+                return res.status(401).json({ error: "Invalid signature" });
+            }
+        }
+
         // Always respond 200 quickly to acknowledge receipt
         res.status(200).json({ received: true });
 
-        // Process in background
-        if (topic === "items") {
-            await processMLItemUpdate(resource, user_id);
-            log.processed = true;
-        } else if (topic === "orders_v2") {
-            await processMLOrderUpdate(resource, user_id);
-            log.processed = true;
-        } else if (topic === "stock") {
-            await processMLStockUpdate(resource, user_id);
-            log.processed = true;
-        } else {
-            console.log(`[Webhook ML] Unhandled topic: ${topic}`);
-        }
+        // Process asynchronously
+        setImmediate(async () => {
+            try {
+                if (topic === "items") {
+                    await processMLItemUpdate(resource, user_id);
+                    log.processed = true;
+                } else if (topic === "orders_v2") {
+                    await processMLOrderUpdate(resource, user_id);
+                    log.processed = true;
+                } else if (topic === "stock") {
+                    await processMLStockUpdate(resource, user_id);
+                    log.processed = true;
+                } else {
+                    console.log(`[Webhook ML] Unhandled topic: ${topic}`);
+                }
+            } catch (error: any) {
+                console.error("[Webhook ML] Processing error:", error.message);
+                log.error = error.message;
+            } finally {
+                webhookLogs.push(log);
+                if (webhookLogs.length > 100) {
+                    webhookLogs.shift();
+                }
+            }
+        });
+
+        return; // Return immediately after sending response
     } catch (error: any) {
         console.error("[Webhook ML] Error:", error.message);
         log.error = error.message;
-        // Still return 200 to prevent ML from retrying
         if (!res.headersSent) {
             res.status(200).json({ received: true, error: error.message });
         }
@@ -66,7 +136,7 @@ router.post("/mercadolibre", async (req: any, res: any) => {
 
     webhookLogs.push(log);
     if (webhookLogs.length > 100) {
-        webhookLogs.shift(); // Keep only last 100 logs
+        webhookLogs.shift();
     }
 });
 
@@ -79,18 +149,18 @@ router.post("/mercadolibre", async (req: any, res: any) => {
  */
 
 // Handle WC webhook verification (GET request)
-router.get("/woocommerce", (req: any, res: any) => {
+router.get("/woocommerce", (_req: Request, res: Response) => {
     console.log("[Webhook WC] GET request received (verification ping)");
     res.status(200).json({ status: "ok", message: "WooCommerce webhook endpoint ready" });
 });
 
 // Handle WC webhook HEAD request (some WC versions use this)
-router.head("/woocommerce", (req: any, res: any) => {
+router.head("/woocommerce", (_req: Request, res: Response) => {
     console.log("[Webhook WC] HEAD request received (verification ping)");
     res.status(200).end();
 });
 
-router.post("/woocommerce", async (req: any, res: any) => {
+router.post("/woocommerce", async (req: Request, res: Response) => {
     console.log("[Webhook WC] Received:", JSON.stringify(req.body).substring(0, 200));
 
     // Check if this is a ping/test request from WooCommerce
@@ -109,23 +179,52 @@ router.post("/woocommerce", async (req: any, res: any) => {
         source: "woocommerce",
         topic: topic as string,
         resourceId: req.body.id?.toString() || "",
-        processed: false
+        processed: false,
+        signature: req.headers["x-wc-webhook-signature"] as string
     };
 
     try {
+        // Verify signature if secret is configured
+        const connectionRepo = AppDataSource.getRepository(Connection);
+        const wcConnection = await connectionRepo.findOneBy({ marketplace: "woocommerce" });
+        
+        if (wcConnection?.apiSecret) {
+            const isValid = verifyWooCommerceSignature(req, wcConnection.apiSecret);
+            if (!isValid) {
+                console.warn("[Webhook WC] Invalid signature");
+                log.error = "Invalid signature";
+                webhookLogs.push(log);
+                return res.status(401).json({ error: "Invalid signature" });
+            }
+        }
+
         // Acknowledge receipt immediately
         res.status(200).json({ received: true });
 
-        // Process based on topic
-        if (topic === "product.updated" || topic === "product.created") {
-            await processWCProductUpdate(req.body);
-            log.processed = true;
-        } else if (topic === "order.created" || topic === "order.updated") {
-            await processWCOrderUpdate(req.body);
-            log.processed = true;
-        } else {
-            console.log(`[Webhook WC] Unhandled topic: ${topic}`);
-        }
+        // Process asynchronously
+        setImmediate(async () => {
+            try {
+                if (topic === "product.updated" || topic === "product.created") {
+                    await processWCProductUpdate(req.body);
+                    log.processed = true;
+                } else if (topic === "order.created" || topic === "order.updated") {
+                    await processWCOrderUpdate(req.body);
+                    log.processed = true;
+                } else {
+                    console.log(`[Webhook WC] Unhandled topic: ${topic}`);
+                }
+            } catch (error: any) {
+                console.error("[Webhook WC] Processing error:", error.message);
+                log.error = error.message;
+            } finally {
+                webhookLogs.push(log);
+                if (webhookLogs.length > 100) {
+                    webhookLogs.shift();
+                }
+            }
+        });
+
+        return; // Return immediately after sending response
     } catch (error: any) {
         console.error("[Webhook WC] Error:", error.message);
         log.error = error.message;

@@ -1,11 +1,13 @@
 import { AppDataSource } from "../data-source";
 import { Connection } from "../entities/Connection";
 import { MercadoLibreAdapter } from "../adapters/MercadoLibreAdapter";
+import { AmazonAdapter } from "../adapters/AmazonAdapter";
 
 export class TokenRefreshService {
     private intervalId: NodeJS.Timeout | null = null;
     private checkIntervalMs = 30 * 60 * 1000; // Check every 30 minutes
     private refreshBeforeExpiryMs = 60 * 60 * 1000; // Refresh 1 hour before expiry
+    private isRunning = false; // Prevent concurrent executions
 
     constructor() {
         console.log("[TokenRefreshService] Service created");
@@ -21,8 +23,8 @@ export class TokenRefreshService {
         this.checkAndRefreshTokens();
 
         // Then run periodically
-        this.intervalId = setInterval(() => {
-            this.checkAndRefreshTokens();
+        this.intervalId = setInterval(async () => {
+            await this.checkAndRefreshTokens();
         }, this.checkIntervalMs);
 
         console.log(`[TokenRefreshService] Running every ${this.checkIntervalMs / 60000} minutes`);
@@ -43,6 +45,13 @@ export class TokenRefreshService {
      * Check all connections and refresh tokens if needed
      */
     async checkAndRefreshTokens() {
+        // Prevent concurrent executions
+        if (this.isRunning) {
+            console.log("[TokenRefreshService] Already running, skipping...");
+            return;
+        }
+
+        this.isRunning = true;
         console.log("[TokenRefreshService] Checking tokens...");
 
         try {
@@ -50,12 +59,21 @@ export class TokenRefreshService {
             const connections = await connectionRepo.find();
 
             for (const conn of connections) {
-                if (conn.marketplace === "mercadolibre" && conn.refreshToken) {
-                    await this.checkMercadoLibreToken(conn, connectionRepo);
+                try {
+                    if (conn.marketplace === "mercadolibre" && conn.refreshToken) {
+                        await this.checkMercadoLibreToken(conn, connectionRepo);
+                    } else if (conn.marketplace === "amazon" && conn.refreshToken) {
+                        await this.checkAmazonToken(conn, connectionRepo);
+                    }
+                } catch (error: any) {
+                    console.error(`[TokenRefreshService] Error refreshing ${conn.marketplace} token:`, error.message);
+                    // Continue with next connection instead of failing all
                 }
             }
         } catch (error: any) {
             console.error("[TokenRefreshService] Error checking tokens:", error.message);
+        } finally {
+            this.isRunning = false;
         }
     }
 
@@ -125,6 +143,75 @@ export class TokenRefreshService {
     }
 
     /**
+     * Check and refresh Amazon token if needed
+     */
+    private async checkAmazonToken(conn: Connection, repo: any) {
+        const now = new Date();
+        const expiresAt = conn.tokenExpiresAt;
+
+        // Amazon tokens typically last 1 hour, refresh 10 minutes before expiry
+        const amazonRefreshThreshold = 10 * 60 * 1000;
+
+        if (!expiresAt) {
+            console.log(`[TokenRefreshService] Amazon connection ${conn.id}: No expiry date set`);
+            return;
+        }
+
+        const timeUntilExpiry = expiresAt.getTime() - now.getTime();
+        const minutesUntilExpiry = Math.round(timeUntilExpiry / (1000 * 60));
+
+        console.log(`[TokenRefreshService] Amazon token expires in ${minutesUntilExpiry} minutes`);
+
+        // Refresh if token expires within threshold
+        if (timeUntilExpiry < amazonRefreshThreshold) {
+            console.log("[TokenRefreshService] Amazon token expiring soon, refreshing...");
+            await this.refreshAmazonToken(conn, repo);
+        } else if (timeUntilExpiry < 0) {
+            console.log("[TokenRefreshService] Amazon token already expired, marking disconnected");
+            conn.isConnected = false;
+            await repo.save(conn);
+        } else {
+            console.log("[TokenRefreshService] Amazon token is still valid");
+        }
+    }
+
+    /**
+     * Refresh Amazon token
+     */
+    private async refreshAmazonToken(conn: Connection, repo: any) {
+        try {
+            if (!conn.refreshToken || !conn.apiKey || !conn.apiSecret) {
+                console.error("[TokenRefreshService] Missing Amazon credentials for refresh");
+                return;
+            }
+
+            const tokenData = await AmazonAdapter.refreshToken(
+                conn.refreshToken,
+                conn.apiKey,
+                conn.apiSecret
+            );
+
+            // Update connection with new tokens
+            conn.accessToken = tokenData.access_token;
+            conn.refreshToken = tokenData.refresh_token;
+            // Amazon tokens expire in 3600 seconds (1 hour)
+            conn.tokenExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
+            conn.isConnected = true;
+
+            await repo.save(conn);
+
+            console.log("[TokenRefreshService] Amazon token refreshed successfully!");
+            console.log(`[TokenRefreshService] New expiry: ${conn.tokenExpiresAt}`);
+        } catch (error: any) {
+            console.error("[TokenRefreshService] Failed to refresh Amazon token:", error.response?.data || error.message);
+
+            // If refresh fails, mark as disconnected
+            conn.isConnected = false;
+            await repo.save(conn);
+        }
+    }
+
+    /**
      * Force refresh a specific connection's token
      */
     async forceRefresh(marketplace: string): Promise<{ success: boolean; message: string }> {
@@ -139,9 +226,12 @@ export class TokenRefreshService {
             if (marketplace === "mercadolibre") {
                 await this.refreshMercadoLibreToken(conn, connectionRepo);
                 return { success: true, message: "Token refreshed successfully" };
+            } else if (marketplace === "amazon") {
+                await this.refreshAmazonToken(conn, connectionRepo);
+                return { success: true, message: "Amazon token refreshed successfully" };
             }
 
-            return { success: false, message: "Marketplace does not support token refresh" };
+            return { success: false, message: `Marketplace ${marketplace} does not support token refresh` };
         } catch (error: any) {
             return { success: false, message: error.message };
         }

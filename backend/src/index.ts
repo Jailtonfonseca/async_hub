@@ -1,6 +1,8 @@
 import "reflect-metadata";
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 
 import { AppDataSource } from "./data-source";
 import connectionsRouter from "./routes/connections";
@@ -14,17 +16,56 @@ import { errorHandler } from "./middlewares/errorHandler";
 const app = express();
 const port = process.env.PORT || 4000;
 
+// Security: Use environment variable with strict validation
 const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000")
     .split(",")
     .map(origin => origin.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(origin => /^https?:\/\/[\w\-.]+(:\d+)?$/.test(origin)); // Validate URL format
+
+// Security middleware
+app.use(helmet({
+    contentSecurityPolicy: false, // Disable for API
+    crossOriginEmbedderPolicy: false,
+}));
+
+// Rate limiting for API endpoints (excluding webhooks)
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: { error: "Too many requests, please try again later" },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+app.use("/api", apiLimiter);
+
+// Stricter rate limit for auth endpoints
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { error: "Too many authentication attempts" },
+});
+
+app.use("/api/connections", authLimiter);
 
 app.use(cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error("Not allowed by CORS"));
+        }
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
 }));
-app.use(express.json());
+
+app.use(express.json({ limit: "10mb" })); // Limit body size
 
 // Track database status
 let dbConnected = false;
