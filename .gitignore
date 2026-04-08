@@ -1,4 +1,51 @@
-backend/.env
-backend/dist
-backend/node_modules
-frontend/node_modules
+```
+# Dependencies
+node_modules/
+node_modules/
+.pnpm-store/
+.yarn/
+yarn.lock
+package-lock.json
+
+# Build outputs
+dist/
+build/
+coverage/
+.nyc_output/
+.eslintcache
+
+# Environment variables
+.env
+.env.local
+.env.*
+!.env.example
+
+# Python related
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git/modules/
+*.tmproj
+*.DS_Store
+Thumbs.db
+.DS_Store
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Icon?
+```

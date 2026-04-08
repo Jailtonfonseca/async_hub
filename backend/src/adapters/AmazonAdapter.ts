@@ -1,6 +1,17 @@
 import SellingPartnerAPI from "amazon-sp-api";
 import { IMarketplace, IProduct, IConnectionCredentials } from "../interfaces/IMarketplace";
 
+interface AmazonClientConfig {
+    region: string;
+    refresh_token: string;
+    credentials: {
+        SELLING_PARTNER_APP_CLIENT_ID: string;
+        SELLING_PARTNER_APP_CLIENT_SECRET: string;
+        AWS_ACCESS_KEY_ID: string;
+        AWS_SECRET_ACCESS_KEY: string;
+    };
+}
+
 export class AmazonAdapter implements IMarketplace {
     name = "amazon";
     private client: any;
@@ -9,17 +20,41 @@ export class AmazonAdapter implements IMarketplace {
     constructor(credentials: IConnectionCredentials) {
         this.credentials = credentials;
 
-        // Initialize SP-API client
-        this.client = new (SellingPartnerAPI as any)({
-            region: (credentials.apiUrl || "us-east-1") as any, // Using apiUrl to store region
+        // Validate required credentials
+        if (!credentials.apiKey || !credentials.apiSecret || !credentials.accessToken || !credentials.userId) {
+            throw new Error("Missing required Amazon credentials");
+        }
+
+        // Initialize SP-API client with proper typing
+        const config: AmazonClientConfig = {
+            region: this.getRegionFromUrl(credentials.apiUrl),
             refresh_token: credentials.refreshToken || "",
             credentials: {
-                SELLING_PARTNER_APP_CLIENT_ID: credentials.apiKey || "",
-                SELLING_PARTNER_APP_CLIENT_SECRET: credentials.apiSecret || "",
-                AWS_ACCESS_KEY_ID: credentials.accessToken || "", // Using accessToken for AWS key
-                AWS_SECRET_ACCESS_KEY: credentials.userId || "", // Using userId for AWS secret
+                SELLING_PARTNER_APP_CLIENT_ID: credentials.apiKey,
+                SELLING_PARTNER_APP_CLIENT_SECRET: credentials.apiSecret,
+                AWS_ACCESS_KEY_ID: credentials.accessToken,
+                AWS_SECRET_ACCESS_KEY: credentials.userId,
             },
-        });
+        };
+
+        this.client = new (SellingPartnerAPI as any)(config);
+    }
+
+    /**
+     * Convert API URL format to Amazon region format
+     */
+    private getRegionFromUrl(apiUrl?: string): string {
+        if (!apiUrl) return "NA"; // Default to North America
+        
+        const regionMap: Record<string, string> = {
+            "us-east-1": "NA",
+            "us-west-2": "NA",
+            "eu-west-1": "EU",
+            "eu-central-1": "EU",
+            "fe-1": "FE", // Far East
+        };
+        
+        return regionMap[apiUrl] || "NA";
     }
 
     async testConnection(): Promise<boolean> {
@@ -33,33 +68,62 @@ export class AmazonAdapter implements IMarketplace {
                 },
             });
             return true;
-        } catch (error) {
-            console.error("Amazon connection test failed:", error);
-            return false;
+        } catch (error: any) {
+            console.error("Amazon connection test failed:", error.message || error);
+            throw new Error(`Amazon connection failed: ${error.message || "Unknown error"}`);
         }
     }
 
-    async getProducts(limit = 20, offset = 0): Promise<IProduct[]> {
+    async getProducts(limit = 50, offset = 0): Promise<IProduct[]> {
         try {
-            // Use Listings Items API to get seller's listings
-            const response = await this.client.callAPI({
-                operation: "getListingsItem",
-                endpoint: "listings",
-                path: {
-                    sellerId: await this.getSellerId(),
-                },
-                query: {
-                    marketplaceIds: this.getMarketplaceId(),
-                    pageSize: limit,
-                    pageToken: offset > 0 ? String(offset) : undefined,
-                },
-            });
+            const allProducts: IProduct[] = [];
+            let pageToken: string | undefined = undefined;
+            let currentPage = 0;
+            
+            // Paginate through all products until we reach the offset
+            while (currentPage * limit < offset || allProducts.length < limit) {
+                const response = await this.client.callAPI({
+                    operation: "getListingsItem",
+                    endpoint: "listings",
+                    path: {
+                        sellerId: await this.getSellerId(),
+                    },
+                    query: {
+                        marketplaceIds: this.getMarketplaceId(),
+                        pageSize: Math.min(limit, 50), // Amazon max page size is 50
+                        pageToken,
+                    },
+                });
 
-            const items = response.items || [];
-            return items.map((item: any) => this.mapToProduct(item));
-        } catch (error) {
-            console.error("Failed to get Amazon products:", error);
-            return [];
+                const items = response.items || [];
+                
+                // Skip items before offset
+                if (currentPage * limit < offset) {
+                    const skipCount = Math.min(items.length, offset - currentPage * limit);
+                    const remainingItems = items.slice(skipCount);
+                    allProducts.push(...remainingItems.map((item: any) => this.mapToProduct(item)));
+                } else {
+                    allProducts.push(...items.map((item: any) => this.mapToProduct(item)));
+                }
+
+                // Check if there are more pages
+                if (!response.pagination?.nextToken) {
+                    break;
+                }
+                pageToken = response.pagination.nextToken;
+                currentPage++;
+                
+                // Safety limit to prevent infinite loops
+                if (currentPage > 100) {
+                    console.warn("AmazonAdapter: Reached maximum pagination limit");
+                    break;
+                }
+            }
+
+            return allProducts.slice(0, limit);
+        } catch (error: any) {
+            console.error("Failed to get Amazon products:", error.message || error);
+            throw new Error(`Failed to fetch Amazon products: ${error.message || "Unknown error"}`);
         }
     }
 
