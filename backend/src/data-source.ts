@@ -33,6 +33,7 @@ export const AppDataSource = new DataSource({
     extra: {
         // Connection pool settings for better performance
         connectionLimit: 10,
+        connectTimeout: 60000,
         acquireTimeout: 60000,
         timeout: 60000,
         reconnect: true,

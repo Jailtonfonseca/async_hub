@@ -32,7 +32,27 @@ const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000")
     .split(",")
     .map(origin => origin.trim())
     .filter(Boolean)
-    .filter(origin => /^https?:\/\/[\w\-.]+(:\d+)?$/.test(origin)); // Validate URL format
+    .filter(origin => {
+    // Strict URL validation - prevent DNS rebinding attacks
+    try {
+        const url = new URL(origin);
+        // Only allow http or https
+        if (!['http:', 'https:'].includes(url.protocol))
+            return false;
+        // Prevent IP addresses except localhost
+        if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(url.hostname)) {
+            return url.hostname === '127.0.0.1';
+        }
+        // Prevent double domains (e.g., evil.com.attacker.com)
+        const parts = url.hostname.split('.');
+        if (parts.length > 3)
+            return false;
+        return true;
+    }
+    catch (_a) {
+        return false;
+    }
+});
 // Security middleware
 app.use((0, helmet_1.default)({
     contentSecurityPolicy: false, // Disable for API
@@ -45,6 +65,7 @@ const apiLimiter = (0, express_rate_limit_1.default)({
     message: { error: "Too many requests, please try again later" },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.path.startsWith('/webhooks'), // Skip rate limiting for webhooks
 });
 app.use("/api", apiLimiter);
 // Stricter rate limit for auth endpoints
@@ -63,12 +84,14 @@ app.use((0, cors_1.default)({
             callback(null, true);
         }
         else {
+            console.warn(`CORS blocked request from: ${origin}`);
             callback(new Error("Not allowed by CORS"));
         }
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["X-RateLimit-Limit", "X-RateLimit-Remaining"], // Expose rate limit headers
 }));
 app.use(express_1.default.json({ limit: "10mb" })); // Limit body size
 // Track database status
@@ -137,12 +160,48 @@ app.post("/api/sync/interval", (req, res) => {
         res.status(400).json({ success: false, error: "Invalid interval (min: 1 minute)" });
     }
 });
-// Global Error Handler
+// Global Error Handler - Must be last middleware
 app.use(errorHandler_1.errorHandler);
+// 404 handler for unknown routes
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        error: {
+            code: "NOT_FOUND",
+            message: `Route ${req.method} ${req.path} not found`,
+        },
+        timestamp: new Date().toISOString(),
+    });
+});
 // Start server IMMEDIATELY
-app.listen(port, () => {
+const server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
+// Graceful shutdown handling
+const gracefulShutdown = (signal) => {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
+    // Stop accepting new connections
+    server.close(() => {
+        console.log('HTTP server closed');
+        // Close database connection
+        data_source_1.AppDataSource.destroy()
+            .then(() => {
+            console.log('Database connection closed');
+            process.exit(0);
+        })
+            .catch((err) => {
+            console.error('Error closing database:', err);
+            process.exit(1);
+        });
+    });
+    // Force shutdown after 30 seconds
+    setTimeout(() => {
+        console.error('Forced shutdown due to timeout');
+        process.exit(1);
+    }, 30000);
+};
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // Connect to database in background
 const MAX_RETRIES = 10;
 const RETRY_DELAY = 5000;

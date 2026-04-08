@@ -1,51 +1,32 @@
 ```
+# Build artifacts
+backend/dist/
+frontend/node_modules/
+
 # Dependencies
 node_modules/
-node_modules/
-.pnpm-store/
-.yarn/
-yarn.lock
 package-lock.json
 
-# Build outputs
-dist/
-build/
-coverage/
-.nyc_output/
-.eslintcache
+# Logs and temp files
+*.log
+*.tmp
 
-# Environment variables
+# Environment
 .env
 .env.local
-.env.*
-!.env.example
+*.env.*
 
-# Python related
+# Editors
+.vscode/
+.idea/
+
+# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-env/
 venv/
 .venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.git/modules/
-*.tmproj
-*.DS_Store
-Thumbs.db
-.DS_Store
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Icon?
+.env
 ```
