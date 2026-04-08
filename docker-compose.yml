@@ -14,18 +14,31 @@ services:
       - ./backend:/app
       - /app/node_modules
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=${NODE_ENV:-development}
       - PORT=4000
       - DB_HOST=db
-      - DB_USER=async_user
-      - DB_PASS=async_pass
-      - DB_NAME=async_hub
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:-async_user}
+      - DB_PASS=${DB_PASS:-async_pass}
+      - DB_NAME=${DB_NAME:-async_hub}
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      - TYPEORM_SYNCHRONIZE=${TYPEORM_SYNCHRONIZE:-false}
+      - DB_SSL=false
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - async-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # Frontend (React)
   frontend:
@@ -40,40 +53,66 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=${VITE_API_URL:-http://backend:4000}
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:4000}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - async-network
     stdin_open: true
     tty: true
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # Database (MariaDB - Better for ARM64)
   db:
-    image: mariadb:latest
+    image: mariadb:10.11
     container_name: async-hub-db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: async_hub
-      MYSQL_USER: async_user
-      MYSQL_PASSWORD: async_pass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${DB_NAME:-async_hub}
+      MYSQL_USER: ${DB_USER:-async_user}
+      MYSQL_PASSWORD: ${DB_PASS:-async_pass}
     volumes:
       - db_data:/var/lib/mysql
     ports:
       - "3306:3306"
     networks:
       - async-network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=256M
 
   # Queue (Redis)
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     container_name: async-hub-redis
     restart: always
     ports:
       - "6379:6379"
     networks:
       - async-network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
 
 networks:
   async-network:
@@ -81,3 +120,6 @@ networks:
 
 volumes:
   db_data:
+    driver: local
+  redis_data:
+    driver: local
