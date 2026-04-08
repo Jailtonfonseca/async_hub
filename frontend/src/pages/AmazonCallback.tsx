@@ -48,26 +48,23 @@ export default function AmazonCallback() {
     }, [searchParams, navigate]);
 
     return (
-    \u003cdiv className = "flex items-center justify-center min-h-screen bg-gray-900"\u003e
-    \u003cdiv className = "bg-gray-800 p-8 rounded-lg border border-gray-700 max-w-md w-full"\u003e
-    \u003ch1 className = "text-2xl font-bold mb-4 text-center"\u003e
-    { status === 'loading' && '⏳ Conectando...' }
-    { status === 'success' && '✅ Sucesso!' }
-    { status === 'error' && '❌ Erro' }
-    \u003c / h1\u003e
-    \u003cp className = "text-gray-300 text-center mb-4"\u003e{ message } \u003c / p\u003e
-    {
-        status === 'error' && (
-        \u003cbutton
-        onClick = {() => navigate('/settings')
-    }
-    className = "w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
-    \u003e
+        <div className="flex items-center justify-center min-h-screen bg-gray-900">
+            <div className="bg-gray-800 p-8 rounded-lg border border-gray-700 max-w-md w-full">
+                <h1 className="text-2xl font-bold mb-4 text-center">
+                    {status === 'loading' && '⏳ Conectando...'}
+                    {status === 'success' && '✅ Sucesso!'}
+                    {status === 'error' && '❌ Erro'}
+                </h1>
+                <p className="text-gray-300 text-center mb-4">{message}</p>
+                {status === 'error' && (
+                    <button
+                        onClick={() => navigate('/settings')}
+                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
+                    >
                         Voltar para Configurações
-    \u003c / button\u003e
-                )
-}
-\u003c / div\u003e
-\u003c / div\u003e
+                    </button>
+                )}
+            </div>
+        </div>
     );
 }
