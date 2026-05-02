@@ -11,5 +11,9 @@
         "emitDecoratorMetadata": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true
-    }
+    },
+    "exclude": [
+        "src/vitest.config.ts",
+        "src/__tests__/**/*"
+    ]
 }

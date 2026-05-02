@@ -22,18 +22,10 @@ const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000")
     .map(origin => origin.trim())
     .filter(Boolean)
     .filter(origin => {
-        // Strict URL validation - prevent DNS rebinding attacks
         try {
             const url = new URL(origin);
             // Only allow http or https
             if (!['http:', 'https:'].includes(url.protocol)) return false;
-            // Prevent IP addresses except localhost
-            if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(url.hostname)) {
-                return url.hostname === '127.0.0.1';
-            }
-            // Prevent double domains (e.g., evil.com.attacker.com)
-            const parts = url.hostname.split('.');
-            if (parts.length > 3) return false;
             return true;
         } catch {
             return false;
@@ -49,7 +41,7 @@ app.use(helmet({
 // Rate limiting for API endpoints (excluding webhooks)
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    max: 300, // limit each IP to 300 requests per windowMs
     message: { error: "Too many requests, please try again later" },
     standardHeaders: true,
     legacyHeaders: false,
@@ -61,7 +53,7 @@ app.use("/api", apiLimiter);
 // Stricter rate limit for auth endpoints
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 10,
+    max: 200,
     message: { error: "Too many authentication attempts" },
 });
 

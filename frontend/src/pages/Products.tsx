@@ -94,25 +94,25 @@ export default function Products() {
 
     const displayItems = getDisplayItems();
 
-    // Calculate totals - count unique products (by groupId or SKU) and sum financials
+    // Calculate totals
     const totals = products.reduce((acc, p) => {
         const productKey = p.groupId || p.sku; // Use groupId to identify unique physical products
         const isFirstInGroup = !acc.seenGroups.has(productKey);
-
-        if (isFirstInGroup) {
-            acc.seenGroups.add(productKey);
-        }
 
         const sellPrice = p.salePrice ? Number(p.salePrice) : Number(p.price);
         const unitProfit = p.costPrice ? sellPrice - Number(p.costPrice) : 0;
         const stockValue = p.costPrice ? Number(p.costPrice) * p.stock : 0;
         const stockProfit = p.costPrice ? unitProfit * p.stock : 0;
 
+        if (isFirstInGroup) {
+            acc.seenGroups.add(productKey);
+        }
+
         return {
             count: isFirstInGroup ? acc.count + 1 : acc.count, // Only count once per group
-            stock: isFirstInGroup ? acc.stock + p.stock : acc.stock, // Only add stock once per group
+            stock: acc.stock + p.stock, // Sum stock across ALL listings (each variant has its own stock)
             stockValue: isFirstInGroup ? acc.stockValue + stockValue : acc.stockValue,
-            stockProfit: isFirstInGroup ? acc.stockProfit + stockProfit : acc.stockProfit, // Only add profit once per group
+            stockProfit: isFirstInGroup ? acc.stockProfit + stockProfit : acc.stockProfit,
             seenGroups: acc.seenGroups
         };
     }, { count: 0, stock: 0, stockValue: 0, stockProfit: 0, seenGroups: new Set<string>() });
@@ -204,7 +204,11 @@ export default function Products() {
             const result = await api.triggerSync(marketplace);
             if (result.success) {
                 const r = result.result;
-                alert(`Sync ${marketplace}: ${r.imported} importados, ${r.updated} atualizados, ${r.failed} falhas`);
+                if (r && (r.imported > 0 || r.updated > 0 || r.failed > 0)) {
+                    alert(`Sync ${marketplace}: ${r.imported} importados, ${r.updated} atualizados, ${r.failed} falhas`);
+                } else {
+                    alert(`Sync disparado para ${marketplace}. Os resultados aparecerão em breve.`);
+                }
             } else {
                 alert('Erro: ' + result.error);
             }
@@ -327,6 +331,13 @@ export default function Products() {
                 )}
             </td>
             <td className="px-4 py-3 text-center">
+                {product.shopeeId ? (
+                    <span className="text-green-400" title={product.shopeeId}>✓</span>
+                ) : (
+                    <span className="text-gray-500">-</span>
+                )}
+            </td>
+            <td className="px-4 py-3 text-center">
                 <div className="flex justify-center gap-1">
                     <button
                         onClick={() => handleEdit(product)}
@@ -348,6 +359,13 @@ export default function Products() {
                         title="Sincronizar com Mercado Livre"
                     >
                         ML
+                    </button>
+                    <button
+                        onClick={() => handleSync(product.id, 'shopee')}
+                        className="px-2 py-1 bg-orange-700 hover:bg-orange-600 rounded text-xs"
+                        title="Sincronizar com Shopee"
+                    >
+                        SP
                     </button>
                     <button
                         onClick={() => handleDelete(product)}
@@ -402,6 +420,13 @@ export default function Products() {
                     >
                         {importing === 'mercadolibre' ? 'Importando...' : '↓ ML'}
                     </button>
+                    <button
+                        onClick={() => handleImport('shopee')}
+                        disabled={!!importing}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded disabled:opacity-50"
+                    >
+                        {importing === 'shopee' ? 'Importando...' : '↓ SP'}
+                    </button>
                 </div>
             </div>
 
@@ -420,6 +445,13 @@ export default function Products() {
                     className="px-3 py-1 bg-yellow-800 hover:bg-yellow-700 rounded text-sm disabled:opacity-50"
                 >
                     {syncingAll ? 'Sincronizando...' : '🔄 Sync All → ML'}
+                </button>
+                <button
+                    onClick={() => handleSyncAll('shopee')}
+                    disabled={syncingAll}
+                    className="px-3 py-1 bg-orange-800 hover:bg-orange-700 rounded text-sm disabled:opacity-50"
+                >
+                    {syncingAll ? 'Sincronizando...' : '🔄 Sync All → SP'}
                 </button>
             </div>
 
@@ -446,6 +478,7 @@ export default function Products() {
                                 <th className="px-4 py-3 text-right">Lucro Estoque</th>
                                 <th className="px-4 py-3 text-center">WC</th>
                                 <th className="px-4 py-3 text-center">ML</th>
+                                <th className="px-4 py-3 text-center">SP</th>
                                 <th className="px-4 py-3 text-center">Ações</th>
                             </tr>
                         </thead>
@@ -457,12 +490,24 @@ export default function Products() {
                                     const isExpanded = expandedGroups.has(group.id);
                                     // Use the first product as representative for some fields
                                     const rep = group.products[0];
-                                    const totalStock = group.products[0].stock; // Shared stock concept
-                                    // Or sum? No, "Shared Stock". So it is just rep.stock.
-                                    // But wait, if they share stock, the total physical inventory is just rep.stock.
-
-                                    const totalValue = group.products.reduce((acc, p) => acc + (Number(p.costPrice || 0) * 0), 0) + (Number(rep.costPrice || 0) * rep.stock);
-                                    // Actually, value of the group in inventory is Cost * Stock. Since stock is shared, it is Cost * Stock ONCE.
+                                    // Compute totals across the group variants
+                                    const totalStock = group.products.reduce((sum, p) => sum + p.stock, 0);
+                                    const minPrice = Math.min(...group.products.map(p => Number(p.price)));
+                                    const maxPrice = Math.max(...group.products.map(p => Number(p.price)));
+                                    const pricesEqual = minPrice === maxPrice;
+                                    const pricesWithSale = group.products.map(p => p.salePrice ? Number(p.salePrice) : Number(p.price));
+                                    const minSalePrice = Math.min(...pricesWithSale);
+                                    const maxSalePrice = Math.max(...pricesWithSale);
+                                    const salesEqual = minSalePrice === maxSalePrice;
+                                    const hasAnyCost = group.products.some(p => p.costPrice);
+                                    const avgCost = hasAnyCost
+                                        ? group.products.reduce((sum, p) => sum + (Number(p.costPrice) || 0), 0) / group.products.filter(p => p.costPrice).length
+                                        : 0;
+                                    const totalStockValue = avgCost * totalStock;
+                                    // Marketplace presence: check if ANY variant has that marketplace
+                                    const hasWC = group.products.some(p => p.woocommerceId);
+                                    const hasML = group.products.some(p => p.mercadoLibreId);
+                                    const hasSP = group.products.some(p => p.shopeeId);
 
                                     return (
                                         <>
@@ -475,28 +520,65 @@ export default function Products() {
                                                     {group.id} <span className="text-gray-500 text-xs font-normal">({group.products.length} itens)</span>
                                                 </td>
                                                 <td className="px-4 py-3 font-medium text-gray-300">
-                                                    {rep.title.split('-')[0]} <span className="text-gray-500 text-xs">(Agrupado)</span>
+                                                    {rep.title.split('-')[0].split('/')[0].trim()} <span className="text-gray-500 text-xs">({group.products.length} {group.products.length === 1 ? 'variante' : 'variantes'})</span>
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-gray-400">
-                                                    Varia
+                                                    {pricesEqual
+                                                        ? `R$ ${minPrice.toFixed(2)}`
+                                                        : `R$ ${minPrice.toFixed(2)} - R$ ${maxPrice.toFixed(2)}`
+                                                    }
+                                                    {group.products.some(p => p.salePrice) && (
+                                                        <span className="text-green-400 text-xs block">
+                                                            → {salesEqual
+                                                                ? `R$ ${minSalePrice.toFixed(2)}`
+                                                                : `R$ ${minSalePrice.toFixed(2)} - R$ ${maxSalePrice.toFixed(2)}`
+                                                            }
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-gray-400">
-                                                    {rep.costPrice ? `R$ ${Number(rep.costPrice).toFixed(2)}` : '-'}
+                                                    {hasAnyCost ? `R$ ${avgCost.toFixed(2)}` : '-'}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold text-white">
-                                                    {rep.stock}
+                                                    {totalStock}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold text-blue-400">
-                                                    {rep.costPrice ? `R$ ${(Number(rep.costPrice) * rep.stock).toFixed(2)}` : '-'}
+                                                    R$ {totalStockValue.toFixed(2)}
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-gray-400">
-                                                    Varia
+                                                    {hasAnyCost && totalStock > 0
+                                                        ? (() => {
+                                                            const avgProfit = group.products.reduce((sum, p) => {
+                                                                const sp = p.salePrice ? Number(p.salePrice) : Number(p.price);
+                                                                const cp = Number(p.costPrice) || 0;
+                                                                return sum + (sp - cp);
+                                                            }, 0) / group.products.length;
+                                                            return `R$ ${avgProfit.toFixed(2)}`;
+                                                        })()
+                                                        : '-'
+                                                    }
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-gray-400">
-                                                    Varia
+                                                    {hasAnyCost && totalStock > 0
+                                                        ? (() => {
+                                                            const totalProfit = group.products.reduce((sum, p) => {
+                                                                const sp = p.salePrice ? Number(p.salePrice) : Number(p.price);
+                                                                const cp = Number(p.costPrice) || 0;
+                                                                return sum + ((sp - cp) * p.stock);
+                                                            }, 0);
+                                                            return `R$ ${totalProfit.toFixed(2)}`;
+                                                        })()
+                                                        : '-'
+                                                    }
                                                 </td>
-                                                <td className="px-4 py-3 text-center" colSpan={3}>
-                                                    <span className="text-xs text-gray-500">Clique para expandir</span>
+                                                <td className="px-4 py-3 text-center">
+                                                    {hasWC ? <span className="text-green-400">✓</span> : <span className="text-gray-500">-</span>}
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    {hasML ? <span className="text-green-400">✓</span> : <span className="text-gray-500">-</span>}
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    {hasSP ? <span className="text-green-400">✓</span> : <span className="text-gray-500">-</span>}
                                                 </td>
                                             </tr>
                                             {/* Children Rows */}

@@ -65,13 +65,15 @@ export class TokenRefreshService {
                     } else if (conn.marketplace === "amazon" && conn.refreshToken) {
                         await this.checkAmazonToken(conn, connectionRepo);
                     }
-                } catch (error: any) {
-                    console.error(`[TokenRefreshService] Error refreshing ${conn.marketplace} token:`, error.message);
+                } catch (error: unknown) {
+                    const errMsg = error instanceof Error ? error.message : String(error);
+                    console.error(`[TokenRefreshService] Error refreshing ${conn.marketplace} token:`, errMsg);
                     // Continue with next connection instead of failing all
                 }
             }
-        } catch (error: any) {
-            console.error("[TokenRefreshService] Error checking tokens:", error.message);
+        } catch (error: unknown) {
+            const errMsg = error instanceof Error ? error.message : String(error);
+            console.error("[TokenRefreshService] Error checking tokens:", errMsg);
         } finally {
             this.isRunning = false;
         }
@@ -133,8 +135,9 @@ export class TokenRefreshService {
 
             console.log("[TokenRefreshService] Token refreshed successfully!");
             console.log(`[TokenRefreshService] New expiry: ${conn.tokenExpiresAt}`);
-        } catch (error: any) {
-            console.error("[TokenRefreshService] Failed to refresh token:", error.response?.data || error.message);
+        } catch (error: unknown) {
+            const errMsg = error instanceof Error ? error.message : String(error);
+            console.error("[TokenRefreshService] Failed to refresh token:", errMsg);
 
             // If refresh fails, mark as disconnected
             conn.isConnected = false;
@@ -189,7 +192,7 @@ export class TokenRefreshService {
                 conn.refreshToken,
                 conn.apiKey,
                 conn.apiSecret
-            );
+            ) as { access_token: string; refresh_token: string; expires_in: number };
 
             // Update connection with new tokens
             conn.accessToken = tokenData.access_token;
@@ -202,8 +205,9 @@ export class TokenRefreshService {
 
             console.log("[TokenRefreshService] Amazon token refreshed successfully!");
             console.log(`[TokenRefreshService] New expiry: ${conn.tokenExpiresAt}`);
-        } catch (error: any) {
-            console.error("[TokenRefreshService] Failed to refresh Amazon token:", error.response?.data || error.message);
+        } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : "Unknown error";
+            console.error("[TokenRefreshService] Failed to refresh Amazon token:", errorMsg);
 
             // If refresh fails, mark as disconnected
             conn.isConnected = false;
@@ -232,8 +236,9 @@ export class TokenRefreshService {
             }
 
             return { success: false, message: `Marketplace ${marketplace} does not support token refresh` };
-        } catch (error: any) {
-            return { success: false, message: error.message };
+        } catch (error: unknown) {
+            const errMsg = error instanceof Error ? error.message : String(error);
+            return { success: false, message: errMsg };
         }
     }
 

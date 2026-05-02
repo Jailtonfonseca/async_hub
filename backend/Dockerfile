@@ -14,6 +14,9 @@ RUN npm install --production=false
 # Copy source code
 COPY . .
 
+# Fix permissions for node_modules binaries
+RUN chmod -R +x /app/node_modules/.bin/
+
 # Expose port
 EXPOSE 4000
 

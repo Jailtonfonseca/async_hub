@@ -5,6 +5,7 @@ import { Connection } from "../entities/Connection";
 import { WooCommerceAdapter } from "../adapters/WooCommerceAdapter";
 import { MercadoLibreAdapter } from "../adapters/MercadoLibreAdapter";
 import { AmazonAdapter } from "../adapters/AmazonAdapter";
+import { ShopeeAdapter } from "../adapters/ShopeeAdapter";
 
 export class ProductController {
     private productRepo = AppDataSource.getRepository(Product);
@@ -254,6 +255,22 @@ export class ProductController {
                     accessToken: connection.accessToken,
                     userId: connection.userId,
                 });
+            } else if (marketplace === "amazon") {
+                adapter = new AmazonAdapter({
+                    apiKey: connection.apiKey,
+                    apiSecret: connection.apiSecret,
+                    accessToken: connection.accessToken,
+                    userId: connection.userId,
+                    apiUrl: connection.apiUrl,
+                    refreshToken: connection.refreshToken,
+                });
+            } else if (marketplace === "shopee") {
+                adapter = new ShopeeAdapter({
+                    apiKey: connection.apiKey,
+                    apiSecret: connection.apiSecret,
+                    accessToken: connection.accessToken,
+                    userId: connection.userId,
+                });
             } else {
                 return res.status(400).json({ error: "Unknown marketplace" });
             }
@@ -271,6 +288,10 @@ export class ProductController {
                     product = await this.productRepo.findOneBy({ mercadoLibreId: extProd.externalId });
                 } else if (marketplace === "woocommerce" && extProd.externalId) {
                     product = await this.productRepo.findOneBy({ woocommerceId: extProd.externalId });
+                } else if (marketplace === "amazon" && extProd.externalId) {
+                    product = await this.productRepo.findOneBy({ amazonId: extProd.externalId });
+                } else if (marketplace === "shopee" && extProd.externalId) {
+                    product = await this.productRepo.findOneBy({ shopeeId: extProd.externalId });
                 }
 
                 // If not found by external ID, try by SKU
@@ -283,9 +304,11 @@ export class ProductController {
                     const isSameSource =
                         (marketplace === "mercadolibre" && product.mercadoLibreId === extProd.externalId) ||
                         (marketplace === "woocommerce" && product.woocommerceId === extProd.externalId) ||
-                        (!product.mercadoLibreId && !product.woocommerceId);
+                        (marketplace === "amazon" && product.amazonId === extProd.externalId) ||
+                        (marketplace === "shopee" && product.shopeeId === extProd.externalId) ||
+                        (!product.mercadoLibreId && !product.woocommerceId && !product.amazonId && !product.shopeeId);
 
-                    if (isSameSource || !product.mercadoLibreId) {
+                    if (isSameSource || (!product.mercadoLibreId && !product.woocommerceId && !product.amazonId && !product.shopeeId)) {
                         product.title = extProd.title;
                         product.description = extProd.description;
                         product.price = extProd.price;
@@ -296,8 +319,18 @@ export class ProductController {
 
                         if (marketplace === "woocommerce") {
                             product.woocommerceId = extProd.externalId;
-                        } else {
+                        } else if (marketplace === "mercadolibre") {
                             product.mercadoLibreId = extProd.externalId;
+                        } else if (marketplace === "amazon") {
+                            product.amazonId = extProd.externalId;
+                        } else if (marketplace === "shopee") {
+                            product.shopeeId = extProd.externalId;
+                        }
+
+                        // Auto-group: if product was found by SKU (not externalId), assign groupId
+                        if (!product.groupId) {
+                            const groupId = await this.findOrCreateGroup(extProd.title, this.productRepo);
+                            product.groupId = groupId;
                         }
 
                         await this.productRepo.save(product);
@@ -308,9 +341,12 @@ export class ProductController {
                         skipped++;
                     }
                 } else {
+                    // Auto-group: find similar products by base name
+                    const groupId = await this.findOrCreateGroup(extProd.title, productRepo);
+
                     // Create new
                     product = this.productRepo.create({
-                        sku: extProd.sku,
+                        sku: extProd.sku || `${marketplace}_${extProd.externalId}`,
                         title: extProd.title,
                         description: extProd.description,
                         price: extProd.price,
@@ -322,6 +358,10 @@ export class ProductController {
                         condition: extProd.condition || "new",
                         woocommerceId: marketplace === "woocommerce" ? extProd.externalId : undefined,
                         mercadoLibreId: marketplace === "mercadolibre" ? extProd.externalId : undefined,
+                        amazonId: marketplace === "amazon" ? extProd.externalId : undefined,
+                        shopeeId: marketplace === "shopee" ? extProd.externalId : undefined,
+                        groupId,
+                        sourceMarketplace: marketplace,
                         lastSyncedAt: new Date(),
                     });
                     await this.productRepo.save(product);
@@ -395,8 +435,12 @@ export class ProductController {
                 // Save external ID
                 if (marketplace === "woocommerce") {
                     product.woocommerceId = result.externalId;
-                } else {
+                } else if (marketplace === "mercadolibre") {
                     product.mercadoLibreId = result.externalId;
+                } else if (marketplace === "amazon") {
+                    product.amazonId = result.externalId;
+                } else if (marketplace === "shopee") {
+                    product.shopeeId = result.externalId;
                 }
             }
 
@@ -411,7 +455,7 @@ export class ProductController {
 
     // Helper method to sync a single product to all its connected marketplaces
     private async syncToMarketplaces(product: Product, changes: { priceChanged?: boolean; salePriceChanged?: boolean; stockChanged?: boolean }) {
-        const syncResults: any = { woocommerce: null, mercadolibre: null, amazon: null };
+        const syncResults: any = { woocommerce: null, mercadolibre: null, amazon: null, shopee: null };
         const { priceChanged, salePriceChanged, stockChanged } = changes;
 
         // Sync to WooCommerce
@@ -497,6 +541,85 @@ export class ProductController {
             }
         }
 
+        // Sync to Shopee
+        if (product.shopeeId) {
+            try {
+                const shopeeConnection = await this.connectionRepo.findOneBy({ marketplace: "shopee" });
+                if (shopeeConnection && shopeeConnection.isConnected) {
+                    const shopeeAdapter = new ShopeeAdapter({
+                        apiKey: shopeeConnection.apiKey || "",
+                        apiSecret: shopeeConnection.apiSecret || "",
+                        accessToken: shopeeConnection.accessToken || "",
+                        userId: shopeeConnection.userId || "",
+                    });
+
+                    if (stockChanged) {
+                        await shopeeAdapter.updateStock(product.shopeeId, product.stock);
+                    }
+                    if (priceChanged || salePriceChanged) {
+                        await shopeeAdapter.updatePrice(product.shopeeId, Number(product.price));
+                    }
+
+                    syncResults.shopee = "synced";
+                    console.log("[ProductSync] Synced to Shopee: " + product.sku);
+                }
+            } catch (e) {
+                syncResults.shopee = "error: " + (e instanceof Error ? e.message : String(e));
+                console.error("[ProductSync] Shopee sync error: " + (e instanceof Error ? e.message : String(e)));
+            }
+        }
+
         return syncResults;
     }
+    /**
+     * Generate a group key from a product title by extracting the base product name
+     * Examples:
+     *   "Smartwatch Ultra T900 Big Tela Amoled Caixa Aluminio Cor Preto" -> "smartwatch ultra t900"
+     *   "Motor Brushless A2212 1400kv Com Montante" -> "motor brushless a2212"
+     */
+    private generateGroupKey(title: string): string {
+        // Normalize: lowercase, remove special chars
+        let normalized = title.toLowerCase().trim();
+        
+        // Remove variation-specific patterns like "cor preto", "caixa aluminio"
+        normalized = normalized
+            .replace(/cor\s+\w+/gi, "")           // "cor preto", "cor branco"
+            .replace(/color\s+\w+/gi, "")          // "color black"
+            .replace(/caixa\s+\w+/gi, "")           // "caixa aluminio"
+            .replace(/\s+/g, " ")                   // collapse spaces
+            .trim();
+        
+        // Take first 3-4 meaningful words as the key
+        const words = normalized.split(" ").filter(w => w.length > 1);
+        const keyWords = words.slice(0, 4);
+        
+        return keyWords.join(" ").toLowerCase().trim();
+    }
+
+    /**
+     * Find an existing group for a product with similar base name,
+     * or create a new group ID
+     */
+    private async findOrCreateGroup(title: string, productRepo: any): Promise<string> {
+        const groupKey = this.generateGroupKey(title);
+        if (!groupKey) {
+            return `group_${Date.now()}`;
+        }
+        
+        // Look for existing products with a matching group key
+        const allProducts = await productRepo.find({ select: ["groupId", "title"] });
+        
+        for (const existing of allProducts) {
+            if (existing.groupId && existing.title) {
+                const existingKey = this.generateGroupKey(existing.title);
+                if (existingKey === groupKey) {
+                    return existing.groupId; // Reuse existing group
+                }
+            }
+        }
+        
+        // Create new group
+        return `group_${Date.now()}`;
+    }
+
 }

@@ -70,13 +70,15 @@ class TokenRefreshService {
                         }
                     }
                     catch (error) {
-                        console.error(`[TokenRefreshService] Error refreshing ${conn.marketplace} token:`, error.message);
+                        const errMsg = error instanceof Error ? error.message : String(error);
+                        console.error(`[TokenRefreshService] Error refreshing ${conn.marketplace} token:`, errMsg);
                         // Continue with next connection instead of failing all
                     }
                 }
             }
             catch (error) {
-                console.error("[TokenRefreshService] Error checking tokens:", error.message);
+                const errMsg = error instanceof Error ? error.message : String(error);
+                console.error("[TokenRefreshService] Error checking tokens:", errMsg);
             }
             finally {
                 this.isRunning = false;
@@ -117,7 +119,6 @@ class TokenRefreshService {
      */
     refreshMercadoLibreToken(conn, repo) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
             try {
                 if (!conn.refreshToken || !conn.apiKey || !conn.apiSecret) {
                     console.error("[TokenRefreshService] Missing credentials for refresh");
@@ -134,7 +135,8 @@ class TokenRefreshService {
                 console.log(`[TokenRefreshService] New expiry: ${conn.tokenExpiresAt}`);
             }
             catch (error) {
-                console.error("[TokenRefreshService] Failed to refresh token:", ((_a = error.response) === null || _a === void 0 ? void 0 : _a.data) || error.message);
+                const errMsg = error instanceof Error ? error.message : String(error);
+                console.error("[TokenRefreshService] Failed to refresh token:", errMsg);
                 // If refresh fails, mark as disconnected
                 conn.isConnected = false;
                 yield repo.save(conn);
@@ -177,7 +179,6 @@ class TokenRefreshService {
      */
     refreshAmazonToken(conn, repo) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
             try {
                 if (!conn.refreshToken || !conn.apiKey || !conn.apiSecret) {
                     console.error("[TokenRefreshService] Missing Amazon credentials for refresh");
@@ -195,7 +196,8 @@ class TokenRefreshService {
                 console.log(`[TokenRefreshService] New expiry: ${conn.tokenExpiresAt}`);
             }
             catch (error) {
-                console.error("[TokenRefreshService] Failed to refresh Amazon token:", ((_a = error.response) === null || _a === void 0 ? void 0 : _a.data) || error.message);
+                const errorMsg = error instanceof Error ? error.message : "Unknown error";
+                console.error("[TokenRefreshService] Failed to refresh Amazon token:", errorMsg);
                 // If refresh fails, mark as disconnected
                 conn.isConnected = false;
                 yield repo.save(conn);
@@ -224,7 +226,8 @@ class TokenRefreshService {
                 return { success: false, message: `Marketplace ${marketplace} does not support token refresh` };
             }
             catch (error) {
-                return { success: false, message: error.message };
+                const errMsg = error instanceof Error ? error.message : String(error);
+                return { success: false, message: errMsg };
             }
         });
     }

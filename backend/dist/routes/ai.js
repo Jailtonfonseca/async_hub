@@ -10,30 +10,34 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const zod_1 = require("zod");
 const data_source_1 = require("../data-source");
 const AdSuggestion_1 = require("../entities/AdSuggestion");
 const AdSuggestionService_1 = require("../services/AdSuggestionService");
 const AgentOrchestrator_1 = require("../ai/AgentOrchestrator");
+const validation_1 = require("../middlewares/validation");
+const schemas_1 = require("../validations/schemas");
+const AISettings_1 = require("../entities/AISettings");
 const router = (0, express_1.Router)();
 /**
  * Get AI providers status
  */
-router.get("/status", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.get("/status", (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const status = AgentOrchestrator_1.agentOrchestrator.getStatus();
         const tests = yield AgentOrchestrator_1.agentOrchestrator.testAllProviders();
         res.json(Object.assign(Object.assign({}, status), { providerStatus: tests }));
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Generate suggestions for a product
  */
-router.post("/generate/:productId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/generate/:productId", (0, validation_1.validateParams)(zod_1.z.object({ productId: zod_1.z.string().regex(/^\d+$/, "ID inválido") })), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const productId = parseInt(req.params.productId);
+        const productId = parseInt(req.params.productId, 10);
         const suggestions = yield AdSuggestionService_1.adSuggestionService.generateSuggestions(productId);
         res.json({
             success: true,
@@ -42,43 +46,42 @@ router.post("/generate/:productId", (req, res) => __awaiter(void 0, void 0, void
         });
     }
     catch (error) {
-        console.error("[AI Routes] Generate error:", error);
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Get all pending suggestions
  */
-router.get("/suggestions", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.get("/suggestions", (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const suggestions = yield AdSuggestionService_1.adSuggestionService.getPendingSuggestions();
         res.json(suggestions);
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Get suggestions for a specific product
  */
-router.get("/suggestions/product/:productId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.get("/suggestions/product/:productId", (0, validation_1.validateParams)(zod_1.z.object({ productId: zod_1.z.string().regex(/^\d+$/, "ID inválido") })), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const productId = parseInt(req.params.productId);
+        const productId = parseInt(req.params.productId, 10);
         const suggestions = yield AdSuggestionService_1.adSuggestionService.getSuggestionsByProduct(productId);
         res.json(suggestions);
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Get a single suggestion
  */
-router.get("/suggestions/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.get("/suggestions/:id", (0, validation_1.validateParams)(schemas_1.idParamSchema), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const repo = data_source_1.AppDataSource.getRepository(AdSuggestion_1.AdSuggestion);
         const suggestion = yield repo.findOne({
-            where: { id: parseInt(req.params.id) },
+            where: { id: parseInt(req.params.id, 10) },
             relations: ["product"],
         });
         if (!suggestion) {
@@ -87,69 +90,72 @@ router.get("/suggestions/:id", (req, res) => __awaiter(void 0, void 0, void 0, f
         res.json(suggestion);
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Update a suggestion (before approval)
  */
-router.put("/suggestions/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.put("/suggestions/:id", (0, validation_1.validateParams)(schemas_1.idParamSchema), (0, validation_1.validateBody)(zod_1.z.object({
+    suggestedTitle: zod_1.z.string().min(1).optional(),
+    suggestedDescription: zod_1.z.string().optional(),
+    suggestedPrice: zod_1.z.number().positive().optional(),
+})), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const repo = data_source_1.AppDataSource.getRepository(AdSuggestion_1.AdSuggestion);
-        const suggestion = yield repo.findOneBy({ id: parseInt(req.params.id) });
+        const suggestion = yield repo.findOneBy({ id: parseInt(req.params.id, 10) });
         if (!suggestion) {
             return res.status(404).json({ error: "Suggestion not found" });
         }
         if (suggestion.status !== "pending") {
             return res.status(400).json({ error: "Can only edit pending suggestions" });
         }
-        // Allow editing title, description, price
-        if (req.body.suggestedTitle)
-            suggestion.suggestedTitle = req.body.suggestedTitle;
-        if (req.body.suggestedDescription)
-            suggestion.suggestedDescription = req.body.suggestedDescription;
-        if (req.body.suggestedPrice)
-            suggestion.suggestedPrice = req.body.suggestedPrice;
+        const { suggestedTitle, suggestedDescription, suggestedPrice } = req.body;
+        if (suggestedTitle !== undefined)
+            suggestion.suggestedTitle = suggestedTitle;
+        if (suggestedDescription !== undefined)
+            suggestion.suggestedDescription = suggestedDescription;
+        if (suggestedPrice !== undefined)
+            suggestion.suggestedPrice = suggestedPrice;
         yield repo.save(suggestion);
         res.json(suggestion);
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Approve a suggestion
  */
-router.post("/suggestions/:id/approve", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/suggestions/:id/approve", (0, validation_1.validateParams)(schemas_1.idParamSchema), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const suggestion = yield AdSuggestionService_1.adSuggestionService.approveSuggestion(parseInt(req.params.id));
+        const suggestion = yield AdSuggestionService_1.adSuggestionService.approveSuggestion(parseInt(req.params.id, 10));
         res.json({ success: true, suggestion });
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Reject a suggestion
  */
-router.post("/suggestions/:id/reject", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/suggestions/:id/reject", (0, validation_1.validateParams)(schemas_1.idParamSchema), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const suggestion = yield AdSuggestionService_1.adSuggestionService.rejectSuggestion(parseInt(req.params.id));
+        const suggestion = yield AdSuggestionService_1.adSuggestionService.rejectSuggestion(parseInt(req.params.id, 10));
         res.json({ success: true, suggestion });
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Create ad in Mercado Libre (after approval)
- * TODO: Implement actual ML API call
  */
-router.post("/suggestions/:id/create-in-ml", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/suggestions/:id/create-in-ml", (0, validation_1.validateParams)(schemas_1.idParamSchema), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const repo = data_source_1.AppDataSource.getRepository(AdSuggestion_1.AdSuggestion);
         const suggestion = yield repo.findOne({
-            where: { id: parseInt(req.params.id) },
+            where: { id: parseInt(req.params.id, 10) },
             relations: ["product"],
         });
         if (!suggestion) {
@@ -162,7 +168,6 @@ router.post("/suggestions/:id/create-in-ml", (req, res) => __awaiter(void 0, voi
         // For now, just mark as created
         suggestion.status = "created";
         suggestion.createdInMlAt = new Date();
-        // suggestion.mlListingId = result.id;
         yield repo.save(suggestion);
         res.json({
             success: true,
@@ -171,18 +176,17 @@ router.post("/suggestions/:id/create-in-ml", (req, res) => __awaiter(void 0, voi
         });
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Bulk approve suggestions
  */
-router.post("/suggestions/bulk-approve", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/suggestions/bulk-approve", (0, validation_1.validateBody)(zod_1.z.object({
+    ids: zod_1.z.array(zod_1.z.number().int().positive()).min(1),
+})), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { ids } = req.body;
-        if (!Array.isArray(ids)) {
-            return res.status(400).json({ error: "ids must be an array" });
-        }
         const results = [];
         for (const id of ids) {
             try {
@@ -190,21 +194,21 @@ router.post("/suggestions/bulk-approve", (req, res) => __awaiter(void 0, void 0,
                 results.push({ id, success: true });
             }
             catch (e) {
-                results.push({ id, success: false, error: e.message });
+                const errorMessage = e instanceof Error ? e.message : "Unknown error";
+                results.push({ id, success: false, error: errorMessage });
             }
         }
         res.json({ results });
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 // ========== AI Settings Management ==========
-const AISettings_1 = require("../entities/AISettings");
 /**
  * Get all AI settings
  */
-router.get("/settings", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.get("/settings", (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const repo = data_source_1.AppDataSource.getRepository(AISettings_1.AISettings);
         const settings = yield repo.find({ order: { priority: "ASC" } });
@@ -213,19 +217,23 @@ router.get("/settings", (req, res) => __awaiter(void 0, void 0, void 0, function
         res.json(masked);
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Save AI settings for a provider
  */
-router.post("/settings/:provider", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/settings/:provider", (0, validation_1.validateParams)(zod_1.z.object({
+    provider: zod_1.z.enum(["openai", "gemini", "openrouter"]),
+})), (0, validation_1.validateBody)(zod_1.z.object({
+    apiKey: zod_1.z.string().min(10).optional(),
+    model: zod_1.z.string().optional(),
+    isEnabled: zod_1.z.boolean().optional(),
+    priority: zod_1.z.number().int().min(1).optional(),
+})), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const provider = req.params.provider;
         const { apiKey, model, isEnabled, priority } = req.body;
-        if (!["openai", "gemini", "openrouter"].includes(provider)) {
-            return res.status(400).json({ error: "Invalid provider" });
-        }
         const repo = data_source_1.AppDataSource.getRepository(AISettings_1.AISettings);
         let settings = yield repo.findOneBy({ provider });
         if (!settings) {
@@ -245,17 +253,19 @@ router.post("/settings/:provider", (req, res) => __awaiter(void 0, void 0, void 
         res.json({
             success: true,
             provider,
-            message: `${provider} settings saved`
+            message: `${provider} settings saved`,
         });
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Delete AI settings for a provider
  */
-router.delete("/settings/:provider", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.delete("/settings/:provider", (0, validation_1.validateParams)(zod_1.z.object({
+    provider: zod_1.z.enum(["openai", "gemini", "openrouter"]),
+})), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const provider = req.params.provider;
         const repo = data_source_1.AppDataSource.getRepository(AISettings_1.AISettings);
@@ -264,13 +274,15 @@ router.delete("/settings/:provider", (req, res) => __awaiter(void 0, void 0, voi
         res.json({ success: true });
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 }));
 /**
  * Test a specific AI provider
  */
-router.post("/settings/:provider/test", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/settings/:provider/test", (0, validation_1.validateParams)(zod_1.z.object({
+    provider: zod_1.z.enum(["openai", "gemini", "openrouter"]),
+})), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const provider = req.params.provider;
         const providerInstance = AgentOrchestrator_1.agentOrchestrator.getProvider(provider);
@@ -280,11 +292,11 @@ router.post("/settings/:provider/test", (req, res) => __awaiter(void 0, void 0, 
         const working = yield providerInstance.testConnection();
         res.json({
             success: working,
-            message: working ? `${provider} is working!` : `${provider} test failed`
+            message: working ? `${provider} is working!` : `${provider} test failed`,
         });
     }
     catch (error) {
-        res.json({ success: false, message: error.message });
+        next(error);
     }
 }));
 /**
@@ -296,7 +308,7 @@ function reloadOrchestrator() {
             const repo = data_source_1.AppDataSource.getRepository(AISettings_1.AISettings);
             const allSettings = yield repo.find({
                 where: { isEnabled: true },
-                order: { priority: "ASC" }
+                order: { priority: "ASC" },
             });
             // Clear existing providers first
             AgentOrchestrator_1.agentOrchestrator.clearProviders();
@@ -314,7 +326,8 @@ function reloadOrchestrator() {
             console.log(`[AI] Orchestrator reloaded with ${allSettings.length} providers from database`);
         }
         catch (e) {
-            console.error("[AI] Failed to reload orchestrator:", e);
+            const errorMessage = e instanceof Error ? e.message : "Unknown error";
+            console.error("[AI] Failed to reload orchestrator:", errorMessage);
         }
     });
 }

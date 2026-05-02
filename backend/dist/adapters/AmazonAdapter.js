@@ -17,14 +17,14 @@ const amazon_sp_api_1 = __importDefault(require("amazon-sp-api"));
 class AmazonAdapter {
     constructor(credentials) {
         this.name = "amazon";
-        // Helper method to get seller ID - cached to avoid multiple API calls
         this.sellerIdCache = null;
         this.credentials = credentials;
         // Validate required credentials
         if (!credentials.apiKey || !credentials.apiSecret || !credentials.accessToken || !credentials.userId) {
             throw new Error("Missing required Amazon credentials");
         }
-        // Initialize SP-API client with proper typing
+        // Initialize SP-API client
+        // Note: amazon-sp-api types are not fully compatible, using 'any' for constructor
         const config = {
             region: this.getRegionFromUrl(credentials.apiUrl),
             refresh_token: credentials.refreshToken || "",
@@ -56,18 +56,19 @@ class AmazonAdapter {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 // Test connection by getting seller info
-                yield this.client.callAPI({
+                const response = yield this.client.callAPI({
                     operation: "getSellers",
                     endpoint: "sellers",
                     query: {
                         marketplaceIds: this.getMarketplaceId(),
                     },
                 });
-                return true;
+                return !!(response.payload && response.payload.length > 0);
             }
             catch (error) {
-                console.error("Amazon connection test failed:", error.message || error);
-                throw new Error(`Amazon connection failed: ${error.message || "Unknown error"}`);
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                console.error("Amazon connection test failed:", errorMessage);
+                throw new Error(`Amazon connection failed: ${errorMessage}`);
             }
         });
     }
@@ -92,7 +93,7 @@ class AmazonAdapter {
                             pageToken,
                         },
                     });
-                    const items = response.items || [];
+                    const items = (response.items || []);
                     // Skip items before offset
                     if (currentPage * limit < offset) {
                         const skipCount = Math.min(items.length, offset - currentPage * limit);
@@ -117,8 +118,9 @@ class AmazonAdapter {
                 return allProducts.slice(0, limit);
             }
             catch (error) {
-                console.error("Failed to get Amazon products:", error.message || error);
-                throw new Error(`Failed to fetch Amazon products: ${error.message || "Unknown error"}`);
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                console.error("Failed to get Amazon products:", errorMessage);
+                throw new Error(`Failed to fetch Amazon products: ${errorMessage}`);
             }
         });
     }
@@ -159,7 +161,7 @@ class AmazonAdapter {
                         sku: product.sku,
                     },
                     body: {
-                        productType: "PRODUCT", // This should be determined based on category
+                        productType: "PRODUCT",
                         requirements: "LISTING",
                         attributes: amazonProduct,
                     },
@@ -378,10 +380,10 @@ class AmazonAdapter {
     // Helper method to map Amazon product to IProduct
     mapToProduct(amazonItem) {
         var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
-        const summaries = ((_a = amazonItem.summaries) === null || _a === void 0 ? void 0 : _a[0]) || {};
-        const attributes = amazonItem.attributes || {};
-        const offers = ((_b = amazonItem.offers) === null || _b === void 0 ? void 0 : _b[0]) || {};
-        const images = amazonItem.images || {};
+        const summaries = (((_a = amazonItem.summaries) === null || _a === void 0 ? void 0 : _a[0]) || {});
+        const attributes = (amazonItem.attributes || {});
+        const offers = (((_b = amazonItem.offers) === null || _b === void 0 ? void 0 : _b[0]) || {});
+        const images = (amazonItem.images || {});
         return {
             externalId: summaries.sku || "",
             sku: summaries.sku || "",
@@ -445,6 +447,7 @@ class AmazonAdapter {
         };
         return [marketplaceMap[region] || "ATVPDKIKX0DER"];
     }
+    // Helper method to get seller ID - cached to avoid multiple API calls
     getSellerId() {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b;
@@ -460,10 +463,14 @@ class AmazonAdapter {
                     },
                 });
                 this.sellerIdCache = ((_b = (_a = response.payload) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.sellerId) || "";
+                if (!this.sellerIdCache) {
+                    throw new Error("Unable to retrieve seller ID from Amazon API");
+                }
                 return this.sellerIdCache;
             }
             catch (error) {
-                console.error("Failed to get seller ID:", error);
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                console.error("Failed to get seller ID:", errorMessage);
                 throw new Error("Unable to retrieve seller ID");
             }
         });

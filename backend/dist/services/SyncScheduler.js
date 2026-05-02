@@ -8,6 +8,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncScheduler = exports.SyncScheduler = void 0;
 const data_source_1 = require("../data-source");
@@ -15,31 +18,107 @@ const Connection_1 = require("../entities/Connection");
 const Product_1 = require("../entities/Product");
 const WooCommerceAdapter_1 = require("../adapters/WooCommerceAdapter");
 const MercadoLibreAdapter_1 = require("../adapters/MercadoLibreAdapter");
+const AmazonAdapter_1 = require("../adapters/AmazonAdapter");
+const redis_1 = __importDefault(require("redis"));
+/**
+ * Redis-backed distributed lock for sync operations
+ */
+class SyncLock {
+    constructor() {
+        this.redis = null;
+        this.lockKey = "async_hub:sync_lock";
+        this.lockTtlSeconds = 300; // 5 minutes max lock time
+        const redisUrl = process.env.REDIS_URL || "redis://redis:6379";
+        try {
+            this.redis = redis_1.default.createClient({ url: redisUrl });
+            this.redis.on("error", (err) => {
+                console.error("[SyncLock] Redis error:", err.message);
+                this.redis = null;
+            });
+            this.redis.connect().catch((err) => {
+                console.error("[SyncLock] Failed to connect to Redis:", err.message);
+                this.redis = null;
+            });
+        }
+        catch (error) {
+            console.warn("[SyncLock] Redis not available, using in-memory lock");
+            this.redis = null;
+        }
+    }
+    acquire() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.redis) {
+                try {
+                    // Use SET with NX (only if not exists) and EX (expiry)
+                    const result = yield this.redis.set(this.lockKey, "locked", {
+                        NX: true,
+                        EX: this.lockTtlSeconds,
+                    });
+                    return result === "OK";
+                }
+                catch (error) {
+                    console.error("[SyncLock] Redis acquire error:", error);
+                    return false;
+                }
+            }
+            return false;
+        });
+    }
+    release() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.redis) {
+                try {
+                    yield this.redis.del(this.lockKey);
+                }
+                catch (error) {
+                    console.error("[SyncLock] Redis release error:", error);
+                }
+            }
+        });
+    }
+    isLocked() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.redis) {
+                try {
+                    const result = yield this.redis.exists(this.lockKey);
+                    return result === 1;
+                }
+                catch (error) {
+                    return false;
+                }
+            }
+            return false;
+        });
+    }
+}
 class SyncScheduler {
     constructor() {
         this.intervalId = null;
         this.syncIntervalMs = 15 * 60 * 1000; // Default: 15 minutes
-        this.isRunning = false;
+        this.isRunning = false; // In-memory fallback
         this.lastSync = null;
         this.lastResult = null;
         this.syncHistory = [];
-        console.log("[SyncScheduler] Service created");
+        this.syncLock = new SyncLock();
+        console.log("[SyncScheduler] Service created with Redis lock support");
     }
     /**
      * Start the automatic sync scheduler
      */
-    start(intervalMinutes = 15) {
-        console.log(`[SyncScheduler] Starting with ${intervalMinutes} minute interval...`);
-        this.syncIntervalMs = intervalMinutes * 60 * 1000;
-        // Run first sync after 1 minute (give time for connections to be ready)
-        setTimeout(() => {
-            this.runFullSync();
-        }, 60 * 1000);
-        // Then run periodically
-        this.intervalId = setInterval(() => {
-            this.runFullSync();
-        }, this.syncIntervalMs);
-        console.log(`[SyncScheduler] Next sync in 1 minute, then every ${intervalMinutes} minutes`);
+    start() {
+        return __awaiter(this, arguments, void 0, function* (intervalMinutes = 15) {
+            console.log(`[SyncScheduler] Starting with ${intervalMinutes} minute interval...`);
+            this.syncIntervalMs = intervalMinutes * 60 * 1000;
+            // Run first sync after 1 minute
+            setTimeout(() => {
+                this.runFullSync();
+            }, 60 * 1000);
+            // Then run periodically
+            this.intervalId = setInterval(() => {
+                this.runFullSync();
+            }, this.syncIntervalMs);
+            console.log(`[SyncScheduler] Next sync in 1 minute, then every ${intervalMinutes} minutes`);
+        });
     }
     /**
      * Stop the sync scheduler
@@ -56,8 +135,15 @@ class SyncScheduler {
      */
     runFullSync() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (this.isRunning) {
-                console.log("[SyncScheduler] Sync already in progress, skipping...");
+            // Try to acquire distributed lock
+            const lockAcquired = yield this.syncLock.acquire();
+            if (!lockAcquired) {
+                // Check if it's just the in-memory flag (for backwards compatibility)
+                if (this.isRunning) {
+                    console.log("[SyncScheduler] Sync already in progress (in-memory), skipping...");
+                    return [];
+                }
+                console.log("[SyncScheduler] Could not acquire Redis lock, skipping...");
                 return [];
             }
             this.isRunning = true;
@@ -82,10 +168,12 @@ class SyncScheduler {
                 console.log("[SyncScheduler] Full sync completed");
             }
             catch (error) {
-                console.error("[SyncScheduler] Error during sync:", error.message);
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                console.error("[SyncScheduler] Error during sync:", errorMessage);
             }
             finally {
                 this.isRunning = false;
+                yield this.syncLock.release();
             }
             return results;
         });
@@ -113,10 +201,14 @@ class SyncScheduler {
                 else if (connection.marketplace === "mercadolibre") {
                     yield this.syncMercadoLibre(connection, result);
                 }
+                else if (connection.marketplace === "amazon") {
+                    yield this.syncAmazon(connection, result);
+                }
             }
             catch (error) {
-                console.error(`[SyncScheduler] Error syncing ${connection.marketplace}:`, error.message);
-                result.errors.push(error.message);
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                console.error(`[SyncScheduler] Error syncing ${connection.marketplace}:`, errorMessage);
+                result.errors.push(errorMessage);
             }
             result.completedAt = new Date();
             console.log(`[SyncScheduler] ${connection.marketplace} sync: ${result.imported} imported, ${result.updated} updated, ${result.failed} failed`);
@@ -140,26 +232,23 @@ class SyncScheduler {
             const productRepo = data_source_1.AppDataSource.getRepository(Product_1.Product);
             const batchSize = 50;
             let offset = 0;
-            let totalImported = 0;
-            let totalUpdated = 0;
             try {
                 while (true) {
                     const remoteProducts = yield adapter.getProducts(batchSize, offset);
                     if (remoteProducts.length === 0) {
-                        break; // No more products
+                        break;
                     }
                     for (const remoteProduct of remoteProducts) {
                         try {
-                            // Use transaction for each product to ensure data consistency
                             yield this.syncSingleProduct(productRepo, remoteProduct, "woocommerce", result);
                         }
                         catch (error) {
                             result.failed++;
-                            result.errors.push(`Product ${remoteProduct.sku}: ${error.message}`);
+                            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                            result.errors.push(`Product ${remoteProduct.sku}: ${errorMessage}`);
                         }
                     }
                     offset += batchSize;
-                    // Safety limit to prevent infinite loops
                     if (offset > 10000) {
                         console.warn("[SyncScheduler] Reached maximum WooCommerce pagination limit");
                         break;
@@ -168,81 +257,9 @@ class SyncScheduler {
                 console.log(`[SyncScheduler] WooCommerce sync completed: ${result.imported} imported, ${result.updated} updated`);
             }
             catch (error) {
-                console.error("[SyncScheduler] WooCommerce sync error:", error.message);
-                result.errors.push(error.message);
-            }
-        });
-    }
-    /**
-     * Sync a single product from any marketplace
-     */
-    syncSingleProduct(productRepo, remoteProduct, sourceMarketplace, result) {
-        return __awaiter(this, void 0, void 0, function* () {
-            // Find existing product by SKU or external ID
-            const whereConditions = [{ sku: remoteProduct.sku }];
-            if (sourceMarketplace === "woocommerce") {
-                whereConditions.push({ woocommerceId: remoteProduct.externalId });
-            }
-            else if (sourceMarketplace === "mercadolibre") {
-                whereConditions.push({ mercadoLibreId: remoteProduct.externalId });
-            }
-            else if (sourceMarketplace === "amazon") {
-                whereConditions.push({ amazonId: remoteProduct.externalId });
-            }
-            let localProduct = yield productRepo.findOne({ where: whereConditions });
-            if (localProduct) {
-                // Update existing product - only update changed fields
-                let hasChanges = false;
-                if (localProduct.title !== remoteProduct.title) {
-                    localProduct.title = remoteProduct.title;
-                    hasChanges = true;
-                }
-                if (localProduct.price !== remoteProduct.price) {
-                    localProduct.price = remoteProduct.price;
-                    hasChanges = true;
-                }
-                if (localProduct.salePrice !== remoteProduct.salePrice) {
-                    localProduct.salePrice = remoteProduct.salePrice;
-                    hasChanges = true;
-                }
-                if (localProduct.stock !== remoteProduct.stock) {
-                    localProduct.stock = remoteProduct.stock;
-                    hasChanges = true;
-                }
-                // Update marketplace-specific ID
-                if (sourceMarketplace === "woocommerce") {
-                    localProduct.woocommerceId = remoteProduct.externalId;
-                }
-                else if (sourceMarketplace === "mercadolibre") {
-                    localProduct.mercadoLibreId = remoteProduct.externalId;
-                }
-                else if (sourceMarketplace === "amazon") {
-                    localProduct.amazonId = remoteProduct.externalId;
-                }
-                if (hasChanges) {
-                    localProduct.lastSyncedAt = new Date();
-                    yield productRepo.save(localProduct);
-                    result.updated++;
-                }
-            }
-            else {
-                // Create new product
-                const newProduct = productRepo.create({
-                    sku: remoteProduct.sku || `${sourceMarketplace}_${remoteProduct.externalId}`,
-                    title: remoteProduct.title,
-                    description: remoteProduct.description || "",
-                    price: remoteProduct.price,
-                    salePrice: remoteProduct.salePrice,
-                    stock: remoteProduct.stock,
-                    images: remoteProduct.images || [],
-                    woocommerceId: sourceMarketplace === "woocommerce" ? remoteProduct.externalId : null,
-                    mercadoLibreId: sourceMarketplace === "mercadolibre" ? remoteProduct.externalId : null,
-                    amazonId: sourceMarketplace === "amazon" ? remoteProduct.externalId : null,
-                    sourceMarketplace,
-                    lastSyncedAt: new Date()
-                });
-                yield productRepo.save(newProduct);
-                result.imported++;
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                console.error("[SyncScheduler] WooCommerce sync error:", errorMessage);
+                result.errors.push(errorMessage);
             }
         });
     }
@@ -266,7 +283,7 @@ class SyncScheduler {
                 while (true) {
                     const remoteProducts = yield adapter.getProducts(batchSize, offset);
                     if (remoteProducts.length === 0) {
-                        break; // No more products
+                        break;
                     }
                     for (const remoteProduct of remoteProducts) {
                         try {
@@ -274,11 +291,11 @@ class SyncScheduler {
                         }
                         catch (error) {
                             result.failed++;
-                            result.errors.push(`Product ${remoteProduct.sku}: ${error.message}`);
+                            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                            result.errors.push(`Product ${remoteProduct.sku}: ${errorMessage}`);
                         }
                     }
                     offset += batchSize;
-                    // Safety limit to prevent infinite loops
                     if (offset > 10000) {
                         console.warn("[SyncScheduler] Reached maximum Mercado Libre pagination limit");
                         break;
@@ -287,8 +304,129 @@ class SyncScheduler {
                 console.log(`[SyncScheduler] Mercado Libre sync completed: ${result.imported} imported, ${result.updated} updated`);
             }
             catch (error) {
-                console.error("[SyncScheduler] Mercado Libre sync error:", error.message);
-                result.errors.push(error.message);
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                console.error("[SyncScheduler] Mercado Libre sync error:", errorMessage);
+                result.errors.push(errorMessage);
+            }
+        });
+    }
+    /**
+     * Sync products from Amazon with pagination support
+     */
+    syncAmazon(connection, result) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!connection.accessToken || !connection.apiKey) {
+                result.errors.push("Missing Amazon credentials");
+                return;
+            }
+            const adapter = new AmazonAdapter_1.AmazonAdapter({
+                apiKey: connection.apiKey,
+                apiSecret: connection.apiSecret,
+                accessToken: connection.accessToken,
+                userId: connection.userId || "",
+                apiUrl: connection.apiUrl,
+                refreshToken: connection.refreshToken,
+            });
+            const productRepo = data_source_1.AppDataSource.getRepository(Product_1.Product);
+            const batchSize = 50;
+            let offset = 0;
+            try {
+                while (true) {
+                    const remoteProducts = yield adapter.getProducts(batchSize, offset);
+                    if (remoteProducts.length === 0) {
+                        break;
+                    }
+                    for (const remoteProduct of remoteProducts) {
+                        try {
+                            yield this.syncSingleProduct(productRepo, remoteProduct, "amazon", result);
+                        }
+                        catch (error) {
+                            result.failed++;
+                            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                            result.errors.push(`Product ${remoteProduct.sku}: ${errorMessage}`);
+                        }
+                    }
+                    offset += batchSize;
+                    if (offset > 10000) {
+                        console.warn("[SyncScheduler] Reached maximum Amazon pagination limit");
+                        break;
+                    }
+                }
+                console.log(`[SyncScheduler] Amazon sync completed: ${result.imported} imported, ${result.updated} updated`);
+            }
+            catch (error) {
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                console.error("[SyncScheduler] Amazon sync error:", errorMessage);
+                result.errors.push(errorMessage);
+            }
+        });
+    }
+    /**
+     * Sync a single product from any marketplace
+     */
+    syncSingleProduct(productRepo, remoteProduct, sourceMarketplace, result) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const whereConditions = [{ sku: remoteProduct.sku }];
+            if (sourceMarketplace === "woocommerce") {
+                whereConditions.push({ woocommerceId: remoteProduct.externalId });
+            }
+            else if (sourceMarketplace === "mercadolibre") {
+                whereConditions.push({ mercadoLibreId: remoteProduct.externalId });
+            }
+            else if (sourceMarketplace === "amazon") {
+                whereConditions.push({ amazonId: remoteProduct.externalId });
+            }
+            let localProduct = yield productRepo.findOne({ where: whereConditions });
+            if (localProduct) {
+                let hasChanges = false;
+                if (localProduct.title !== remoteProduct.title) {
+                    localProduct.title = remoteProduct.title;
+                    hasChanges = true;
+                }
+                if (localProduct.price !== remoteProduct.price) {
+                    localProduct.price = remoteProduct.price;
+                    hasChanges = true;
+                }
+                if (localProduct.salePrice !== remoteProduct.salePrice) {
+                    localProduct.salePrice = remoteProduct.salePrice;
+                    hasChanges = true;
+                }
+                if (localProduct.stock !== remoteProduct.stock) {
+                    localProduct.stock = remoteProduct.stock;
+                    hasChanges = true;
+                }
+                if (sourceMarketplace === "woocommerce") {
+                    localProduct.woocommerceId = remoteProduct.externalId;
+                }
+                else if (sourceMarketplace === "mercadolibre") {
+                    localProduct.mercadoLibreId = remoteProduct.externalId;
+                }
+                else if (sourceMarketplace === "amazon") {
+                    localProduct.amazonId = remoteProduct.externalId;
+                }
+                if (hasChanges) {
+                    localProduct.lastSyncedAt = new Date();
+                    yield productRepo.save(localProduct);
+                    result.updated++;
+                }
+            }
+            else {
+                const newProduct = productRepo.create({
+                    sku: remoteProduct.sku || `${sourceMarketplace}_${remoteProduct.externalId}`,
+                    title: remoteProduct.title,
+                    description: remoteProduct.description || "",
+                    price: remoteProduct.price,
+                    salePrice: remoteProduct.salePrice,
+                    stock: remoteProduct.stock,
+                    images: remoteProduct.images || [],
+                    woocommerceId: sourceMarketplace === "woocommerce" ? remoteProduct.externalId : null,
+                    mercadoLibreId: sourceMarketplace === "mercadolibre" ? remoteProduct.externalId : null,
+                    amazonId: sourceMarketplace === "amazon" ? remoteProduct.externalId : null,
+                    sourceMarketplace,
+                    lastSyncedAt: new Date()
+                });
+                yield productRepo.save(newProduct);
+                result.imported++;
             }
         });
     }

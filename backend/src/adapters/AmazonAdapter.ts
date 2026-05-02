@@ -12,10 +12,29 @@ interface AmazonClientConfig {
     };
 }
 
+interface AmazonProductResponse {
+    items?: Array<Record<string, unknown>>;
+    pagination?: {
+        nextToken?: string;
+    };
+}
+
+interface AmazonSellerResponse {
+    payload?: Array<{ sellerId?: string }>;
+}
+
+interface AmazonListingsItemResponse {
+    summaries?: Array<Record<string, unknown>>;
+    attributes?: Record<string, unknown>;
+    offers?: Array<Record<string, unknown>>;
+    images?: Record<string, unknown>;
+}
+
 export class AmazonAdapter implements IMarketplace {
     name = "amazon";
     private client: any;
     private credentials: IConnectionCredentials;
+    private sellerIdCache: string | null = null;
 
     constructor(credentials: IConnectionCredentials) {
         this.credentials = credentials;
@@ -25,8 +44,9 @@ export class AmazonAdapter implements IMarketplace {
             throw new Error("Missing required Amazon credentials");
         }
 
-        // Initialize SP-API client with proper typing
-        const config: AmazonClientConfig = {
+        // Initialize SP-API client
+        // Note: amazon-sp-api types are not fully compatible, using 'any' for constructor
+        const config = {
             region: this.getRegionFromUrl(credentials.apiUrl),
             refresh_token: credentials.refreshToken || "",
             credentials: {
@@ -36,8 +56,7 @@ export class AmazonAdapter implements IMarketplace {
                 AWS_SECRET_ACCESS_KEY: credentials.userId,
             },
         };
-
-        this.client = new (SellingPartnerAPI as any)(config);
+        this.client = new (SellingPartnerAPI as any)(config as any);
     }
 
     /**
@@ -60,17 +79,19 @@ export class AmazonAdapter implements IMarketplace {
     async testConnection(): Promise<boolean> {
         try {
             // Test connection by getting seller info
-            await this.client.callAPI({
+            const response = await this.client.callAPI({
                 operation: "getSellers",
                 endpoint: "sellers",
                 query: {
                     marketplaceIds: this.getMarketplaceId(),
                 },
-            });
-            return true;
-        } catch (error: any) {
-            console.error("Amazon connection test failed:", error.message || error);
-            throw new Error(`Amazon connection failed: ${error.message || "Unknown error"}`);
+            }) as AmazonSellerResponse;
+            
+            return !!(response.payload && response.payload.length > 0);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            console.error("Amazon connection test failed:", errorMessage);
+            throw new Error(`Amazon connection failed: ${errorMessage}`);
         }
     }
 
@@ -93,17 +114,17 @@ export class AmazonAdapter implements IMarketplace {
                         pageSize: Math.min(limit, 50), // Amazon max page size is 50
                         pageToken,
                     },
-                });
+                }) as AmazonProductResponse;
 
-                const items = response.items || [];
+                const items = (response.items || []) as Array<Record<string, unknown>>;
                 
                 // Skip items before offset
                 if (currentPage * limit < offset) {
                     const skipCount = Math.min(items.length, offset - currentPage * limit);
                     const remainingItems = items.slice(skipCount);
-                    allProducts.push(...remainingItems.map((item: any) => this.mapToProduct(item)));
+                    allProducts.push(...remainingItems.map((item) => this.mapToProduct(item)));
                 } else {
-                    allProducts.push(...items.map((item: any) => this.mapToProduct(item)));
+                    allProducts.push(...items.map((item) => this.mapToProduct(item)));
                 }
 
                 // Check if there are more pages
@@ -121,9 +142,10 @@ export class AmazonAdapter implements IMarketplace {
             }
 
             return allProducts.slice(0, limit);
-        } catch (error: any) {
-            console.error("Failed to get Amazon products:", error.message || error);
-            throw new Error(`Failed to fetch Amazon products: ${error.message || "Unknown error"}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            console.error("Failed to get Amazon products:", errorMessage);
+            throw new Error(`Failed to fetch Amazon products: ${errorMessage}`);
         }
     }
 
@@ -141,10 +163,10 @@ export class AmazonAdapter implements IMarketplace {
                     marketplaceIds: this.getMarketplaceId(),
                     includedData: ["summaries", "attributes", "offers", "images"],
                 },
-            });
+            }) as AmazonListingsItemResponse;
 
-            return this.mapToProduct(response);
-        } catch (error) {
+            return this.mapToProduct(response as Record<string, unknown>);
+        } catch (error: unknown) {
             console.error("Failed to get Amazon product:", error);
             return null;
         }
@@ -163,7 +185,7 @@ export class AmazonAdapter implements IMarketplace {
                     sku: product.sku,
                 },
                 body: {
-                    productType: "PRODUCT", // This should be determined based on category
+                    productType: "PRODUCT",
                     requirements: "LISTING",
                     attributes: amazonProduct,
                 },
@@ -171,7 +193,7 @@ export class AmazonAdapter implements IMarketplace {
 
             // Return the created product
             return { ...product, externalId: product.sku };
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to create Amazon product:", error);
             throw error;
         }
@@ -202,7 +224,7 @@ export class AmazonAdapter implements IMarketplace {
             });
 
             return { ...product, externalId, sku: externalId } as IProduct;
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to update Amazon product:", error);
             throw error;
         }
@@ -237,7 +259,7 @@ export class AmazonAdapter implements IMarketplace {
             });
 
             return true;
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to update Amazon stock:", error);
             return false;
         }
@@ -283,7 +305,7 @@ export class AmazonAdapter implements IMarketplace {
             });
 
             return true;
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to update Amazon price:", error);
             return false;
         }
@@ -317,7 +339,7 @@ export class AmazonAdapter implements IMarketplace {
             });
 
             return true;
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to pause Amazon product:", error);
             return false;
         }
@@ -351,7 +373,7 @@ export class AmazonAdapter implements IMarketplace {
             });
 
             return true;
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to activate Amazon product:", error);
             return false;
         }
@@ -374,38 +396,38 @@ export class AmazonAdapter implements IMarketplace {
             });
 
             return true;
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to delete Amazon product:", error);
             return false;
         }
     }
 
     // Helper method to map Amazon product to IProduct
-    private mapToProduct(amazonItem: any): IProduct {
-        const summaries = amazonItem.summaries?.[0] || {};
-        const attributes = amazonItem.attributes || {};
-        const offers = amazonItem.offers?.[0] || {};
-        const images = amazonItem.images || {};
+    private mapToProduct(amazonItem: Record<string, unknown>): IProduct {
+        const summaries = (amazonItem.summaries?.[0] || {}) as Record<string, unknown>;
+        const attributes = (amazonItem.attributes || {}) as Record<string, unknown>;
+        const offers = (amazonItem.offers?.[0] || {}) as Record<string, unknown>;
+        const images = (amazonItem.images || {}) as Record<string, unknown>;
 
         return {
-            externalId: summaries.sku || "",
-            sku: summaries.sku || "",
-            title: summaries.itemName || attributes.item_name?.[0]?.value || "",
-            description: attributes.bullet_point?.map((bp: any) => bp.value).join("\n") || "",
-            price: offers.price?.amount || 0,
-            salePrice: offers.salePrice?.amount,
-            stock: summaries.quantity || 0,
-            images: images.main?.map((img: any) => img.link) || [],
-            category: summaries.productType || "",
-            brand: attributes.brand?.[0]?.value || "",
-            condition: summaries.condition === "new_new" ? "new" : "used",
-            status: summaries.status === "ACTIVE" ? "active" : "paused",
+            externalId: (summaries.sku as string) || "",
+            sku: (summaries.sku as string) || "",
+            title: (summaries.itemName as string) || (attributes.item_name as Array<{ value: string }>)?.[0]?.value || "",
+            description: ((attributes.bullet_point as Array<{ value: string }>)?.map((bp) => bp.value).join("\n")) || "",
+            price: (offers.price as { amount: number })?.amount || 0,
+            salePrice: (offers.salePrice as { amount: number })?.amount,
+            stock: (summaries.quantity as number) || 0,
+            images: (images.main as Array<{ link: string }>)?.map((img) => img.link) || [],
+            category: (summaries.productType as string) || "",
+            brand: (attributes.brand as Array<{ value: string }>)?.[0]?.value || "",
+            condition: (summaries.condition as string) === "new_new" ? "new" : "used",
+            status: (summaries.status as string) === "ACTIVE" ? "active" : "paused",
             sourceMarketplace: "amazon",
         };
     }
 
     // Helper method to map IProduct to Amazon format
-    private mapToAmazonProduct(product: IProduct): any {
+    private mapToAmazonProduct(product: IProduct): Record<string, unknown> {
         return {
             item_name: [{ value: product.title, language_tag: "en_US" }],
             bullet_point: product.description
@@ -454,7 +476,6 @@ export class AmazonAdapter implements IMarketplace {
     }
 
     // Helper method to get seller ID - cached to avoid multiple API calls
-    private sellerIdCache: string | null = null;
     private async getSellerId(): Promise<string> {
         if (this.sellerIdCache) {
             return this.sellerIdCache;
@@ -467,12 +488,16 @@ export class AmazonAdapter implements IMarketplace {
                 query: {
                     marketplaceIds: this.getMarketplaceId(),
                 },
-            });
+            }) as AmazonSellerResponse;
 
             this.sellerIdCache = response.payload?.[0]?.sellerId || "";
+            if (!this.sellerIdCache) {
+                throw new Error("Unable to retrieve seller ID from Amazon API");
+            }
             return this.sellerIdCache;
-        } catch (error) {
-            console.error("Failed to get seller ID:", error);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            console.error("Failed to get seller ID:", errorMessage);
             throw new Error("Unable to retrieve seller ID");
         }
     }
@@ -498,7 +523,7 @@ export class AmazonAdapter implements IMarketplace {
         clientId: string,
         clientSecret: string,
         redirectUri: string
-    ): Promise<any> {
+    ): Promise<Record<string, unknown>> {
         const response = await fetch("https://api.amazon.com/auth/o2/token", {
             method: "POST",
             headers: {
@@ -517,14 +542,14 @@ export class AmazonAdapter implements IMarketplace {
             throw new Error(`Token exchange failed: ${response.statusText}`);
         }
 
-        return response.json();
+        return response.json() as Promise<Record<string, unknown>>;
     }
 
     static async refreshToken(
         refreshToken: string,
         clientId: string,
         clientSecret: string
-    ): Promise<any> {
+    ): Promise<Record<string, unknown>> {
         const response = await fetch("https://api.amazon.com/auth/o2/token", {
             method: "POST",
             headers: {
@@ -542,6 +567,6 @@ export class AmazonAdapter implements IMarketplace {
             throw new Error(`Token refresh failed: ${response.statusText}`);
         }
 
-        return response.json();
+        return response.json() as Promise<Record<string, unknown>>;
     }
 }
